@@ -1,16 +1,24 @@
-import { formatClock } from "../lib/audio";
+import { useEffect, useRef, useState } from "react";
+import { formatClock, isRemoteTrack } from "../lib/audio";
+import { categorizeTrack } from "../lib/gemini";
+import type { MusicProfile } from "../lib/profiles";
 import type { FocusMode, TimerSettings, Track } from "../types";
 import { Icon } from "./Icon";
 import { KaTeXTooltip } from "./KaTeXTooltip";
 import { MusicLibrary } from "./MusicLibrary";
+import { ProfilePicker } from "./ProfilePicker";
 import { TimerSettings as TimerSettingsModal } from "./TimerSettings";
-import { YouTubePlayer } from "./YouTubePlayer";
+import { RemotePlayer } from "./RemotePlayer";
 
 interface FocusPlayerProps {
   tracks: Track[];
   musicDir: string;
   currentTrack: Track | null;
+  profiles: MusicProfile[];
+  activeProfileId: string;
+  profilePickerOpen: boolean;
   favoriteTrackIds: string[];
+  favoritesOnly: boolean;
   currentTrackId: string | null;
   isPlaying: boolean;
   volume: number;
@@ -24,51 +32,46 @@ interface FocusPlayerProps {
   busy: boolean;
   error: string | null;
   onToggleLibrary: (open: boolean) => void;
+  onToggleProfilePicker: (open: boolean) => void;
+  onSelectProfile: (profileId: string) => void | Promise<void>;
+  onCreateProfile: (name: string) => void | Promise<void>;
+  onDeleteProfile: (profileId: string) => void | Promise<void>;
   onImport: () => void;
   onAddLink: (url: string) => void;
   onDropFiles: (files: File[]) => void;
-  youtubeSeekRequest: { value: number; token: number } | null;
-  onYoutubeTime: (value: number) => void;
-  onYoutubeDuration: (value: number) => void;
-  onYoutubePlaying: (playing: boolean) => void;
-  onYoutubeEnded: () => void;
-  onYoutubeError: (message: string) => void;
+  remoteSeekRequest: { value: number; token: number } | null;
+  onRemoteTime: (value: number) => void;
+  onRemoteDuration: (value: number) => void;
+  onRemotePlaying: (playing: boolean) => void;
+  onRemoteEnded: () => void;
+  onRemoteError: (message: string) => void;
   onRefresh: () => void;
   onOpenFolder: () => void;
   onSelect: (trackId: string, autoplay?: boolean) => void;
   onRemove: (track: Track) => void;
+  onSetFavoritesOnly: (enabled: boolean) => void;
   onTogglePlay: () => void;
   onNext: () => void;
   onPrevious: () => void;
   onSeek: (value: number) => void;
   onVolume: (value: number) => void;
   onToggleFavorite: (trackId: string) => void;
-  onCycleMode: () => void;
   onOpenTimerSettings: () => void;
   onCloseTimerSettings: () => void;
   onTimerSettingsChange: (settings: TimerSettings) => void;
-  onResetSession: () => void;
   onClearError: () => void;
 }
-
-const MODE_LABEL: Record<FocusMode, string> = {
-  deep: "Deep Work",
-  flow: "Flow",
-  calm: "Calm",
-};
-
-const MODE_TEX: Record<FocusMode, string> = {
-  deep: "\\text{Deep Work}",
-  flow: "\\text{Flow State}",
-  calm: "\\text{Calm Focus}",
-};
 
 export function FocusPlayer(props: FocusPlayerProps) {
   const {
     tracks,
     musicDir,
     currentTrack,
+    profiles,
+    activeProfileId,
+    profilePickerOpen,
     favoriteTrackIds,
+    favoritesOnly,
     currentTrackId,
     isPlaying,
     volume,
@@ -82,30 +85,33 @@ export function FocusPlayer(props: FocusPlayerProps) {
     busy,
     error,
     onToggleLibrary,
+    onToggleProfilePicker,
+    onSelectProfile,
+    onCreateProfile,
+    onDeleteProfile,
     onImport,
     onAddLink,
     onDropFiles,
-    youtubeSeekRequest,
-    onYoutubeTime,
-    onYoutubeDuration,
-    onYoutubePlaying,
-    onYoutubeEnded,
-    onYoutubeError,
+    remoteSeekRequest,
+    onRemoteTime,
+    onRemoteDuration,
+    onRemotePlaying,
+    onRemoteEnded,
+    onRemoteError,
     onRefresh,
     onOpenFolder,
     onSelect,
     onRemove,
+    onSetFavoritesOnly,
     onTogglePlay,
     onNext,
     onPrevious,
     onSeek,
     onVolume,
     onToggleFavorite,
-    onCycleMode,
     onOpenTimerSettings,
     onCloseTimerSettings,
     onTimerSettingsChange,
-    onResetSession,
     onClearError,
   } = props;
 
@@ -113,6 +119,54 @@ export function FocusPlayer(props: FocusPlayerProps) {
     timerSettings.kind === "infinite"
       ? "\\infty"
       : `${timerSettings.durationMinutes ?? 60}\\text{m}`;
+  const [trackCategory, setTrackCategory] = useState<string | null>(
+    currentTrack?.category ?? null,
+  );
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [favoriteBursting, setFavoriteBursting] = useState(false);
+  const favoriteBurstTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setTrackCategory(currentTrack?.category ?? null);
+    setCategoryLoading(Boolean(currentTrack));
+    if (!currentTrack) return () => undefined;
+
+    void categorizeTrack(currentTrack).then((category) => {
+      if (!active) return;
+      setTrackCategory(category);
+      setCategoryLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [currentTrack?.id]);
+
+  useEffect(
+    () => () => {
+      if (favoriteBurstTimerRef.current !== null) {
+        window.clearTimeout(favoriteBurstTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const categoryLabel = categoryLoading
+    ? "AI..."
+    : trackCategory ?? "GROOVE";
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  const profileLabel = activeProfile?.name ?? "Deep Work";
+  const sourceLabel =
+    currentTrack?.source === "youtube"
+      ? "YouTube stream"
+      : currentTrack?.source === "spotify"
+        ? "Spotify stream"
+        : currentTrack?.source === "soundcloud"
+          ? "SoundCloud stream"
+          : currentTrack?.source === "tiktok"
+            ? "TikTok stream"
+            : "Local Neural Effect";
 
   return (
     <div className={`focus-shell mode-${mode}`}>
@@ -125,16 +179,16 @@ export function FocusPlayer(props: FocusPlayerProps) {
         />
       ) : null}
       <div className="focus-vignette" aria-hidden="true" />
-      <YouTubePlayer
-        track={currentTrack?.source === "youtube" ? currentTrack : null}
-        playing={currentTrack?.source === "youtube" && isPlaying}
+      <RemotePlayer
+        track={currentTrack}
+        playing={Boolean(isRemoteTrack(currentTrack) && isPlaying)}
         volume={volume}
-        seekRequest={youtubeSeekRequest}
-        onTime={onYoutubeTime}
-        onDuration={onYoutubeDuration}
-        onPlaying={onYoutubePlaying}
-        onEnded={onYoutubeEnded}
-        onError={onYoutubeError}
+        seekRequest={remoteSeekRequest}
+        onTime={onRemoteTime}
+        onDuration={onRemoteDuration}
+        onPlaying={onRemotePlaying}
+        onEnded={onRemoteEnded}
+        onError={onRemoteError}
       />
 
       <header className="focus-top">
@@ -144,15 +198,16 @@ export function FocusPlayer(props: FocusPlayerProps) {
               <Icon name="arrow-left" />
             </button>
           </KaTeXTooltip>
-          <KaTeXTooltip formula={MODE_TEX[mode]}>
+          <KaTeXTooltip formula={`\\text{${escapeTex(profileLabel)}}`}>
             <button
               type="button"
-              className="mode-pill"
-              aria-label={MODE_LABEL[mode]}
-              onClick={onCycleMode}
+              className={`mode-pill profile-pill profile-pill--${activeProfile?.theme ?? mode}`}
+              aria-label={`Profile: ${profileLabel}`}
+              aria-expanded={profilePickerOpen}
+              onClick={() => onToggleProfilePicker(!profilePickerOpen)}
             >
               <span className="mode-dot" aria-hidden="true" />
-              <span className="mode-text">{MODE_LABEL[mode]}</span>
+              <span className="mode-text">{profileLabel}</span>
               <Icon name="chevron-down" size={15} />
             </button>
           </KaTeXTooltip>
@@ -193,6 +248,16 @@ export function FocusPlayer(props: FocusPlayerProps) {
         </div>
       </header>
 
+      <ProfilePicker
+        open={profilePickerOpen}
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        onClose={() => onToggleProfilePicker(false)}
+        onSelect={onSelectProfile}
+        onCreate={onCreateProfile}
+        onDelete={onDeleteProfile}
+      />
+
       <main className="focus-center">
         <KaTeXTooltip formula="\text{IN FOCUS}">
           <p className="focus-kicker">IN FOCUS</p>
@@ -209,7 +274,7 @@ export function FocusPlayer(props: FocusPlayerProps) {
             type="button"
             className="timer-display"
             aria-label={`Timer ${timerLabel}`}
-            onClick={onResetSession}
+            onClick={onOpenTimerSettings}
           >
             {timerLabel}
           </button>
@@ -274,35 +339,35 @@ export function FocusPlayer(props: FocusPlayerProps) {
                 {currentTrack?.title ?? "—"}
               </button>
             </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Local Neural Effect}">
-              <span className="now-sub">Local Neural Effect</span>
+            <KaTeXTooltip formula={`\\text{${sourceLabel}}`}>
+              <span className="now-sub">{sourceLabel}</span>
             </KaTeXTooltip>
             <div className="now-chips">
-              <KaTeXTooltip formula="\text{Groove}">
-                <span className="chip">GROOVE</span>
-              </KaTeXTooltip>
-              <KaTeXTooltip formula="\text{Track details}">
-                <button
-                  type="button"
-                  className="chip"
-                  onClick={() => onToggleLibrary(true)}
-                >
-                  + DETAILS
-                </button>
+              <KaTeXTooltip
+                formula={`\\text{AI music category:}~\\text{${escapeTex(categoryLabel)}}`}
+              >
+                <span className={categoryLoading ? "chip is-loading" : "chip"}>
+                  {categoryLabel}
+                </span>
               </KaTeXTooltip>
             </div>
           </div>
 
           <div className="now-react">
-            <KaTeXTooltip formula="\text{Skip vibe}">
-              <button type="button" className="icon-btn ghost" aria-label="Dislike">
-                <Icon name="thumbs-down" size={18} />
-              </button>
-            </KaTeXTooltip>
             <KaTeXTooltip formula="\text{Favorite}">
               <button
                 type="button"
-                className={`icon-btn ghost ${currentTrack && favoriteTrackIds.includes(currentTrack.id) ? "is-favorite" : ""}`}
+                className={[
+                  "icon-btn",
+                  "ghost",
+                  "favorite-control",
+                  currentTrack && favoriteTrackIds.includes(currentTrack.id)
+                    ? "is-favorite"
+                    : "",
+                  favoriteBursting ? "is-bursting" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 aria-label={
                   currentTrack && favoriteTrackIds.includes(currentTrack.id)
                     ? "Remove from favorites"
@@ -311,15 +376,21 @@ export function FocusPlayer(props: FocusPlayerProps) {
                 aria-pressed={currentTrack ? favoriteTrackIds.includes(currentTrack.id) : false}
                 disabled={!currentTrack}
                 onClick={() => {
-                  if (currentTrack) onToggleFavorite(currentTrack.id);
+                  if (!currentTrack) return;
+                  const wasFavorite = favoriteTrackIds.includes(currentTrack.id);
+                  onToggleFavorite(currentTrack.id);
+                  if (wasFavorite) return;
+                  if (favoriteBurstTimerRef.current !== null) {
+                    window.clearTimeout(favoriteBurstTimerRef.current);
+                  }
+                  setFavoriteBursting(true);
+                  favoriteBurstTimerRef.current = window.setTimeout(() => {
+                    favoriteBurstTimerRef.current = null;
+                    setFavoriteBursting(false);
+                  }, 760);
                 }}
               >
                 <Icon name="heart" size={19} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Share session}">
-              <button type="button" className="icon-btn ghost" aria-label="Share">
-                <Icon name="share" size={18} />
               </button>
             </KaTeXTooltip>
           </div>
@@ -327,19 +398,19 @@ export function FocusPlayer(props: FocusPlayerProps) {
 
         <div className="transport">
           <KaTeXTooltip formula="\text{Repeat queue}">
-            <button type="button" className="icon-btn ghost tiny" aria-label="Repeat">
-              <Icon name="repeat" size={17} />
+            <button type="button" className="repeat-btn" aria-label="Repeat queue">
+              <Icon name="repeat" size={19} />
             </button>
           </KaTeXTooltip>
           <div className="transport-row">
             <KaTeXTooltip formula="\text{Previous}">
               <button
                 type="button"
-                className="icon-btn ghost"
+                className="transport-btn transport-btn--previous"
                 aria-label="Previous"
                 onClick={onPrevious}
               >
-                <Icon name="previous" size={21} />
+                <Icon name="previous" size={24} />
               </button>
             </KaTeXTooltip>
             <KaTeXTooltip formula={isPlaying ? "\\text{Pause}" : "\\text{Play}"}>
@@ -349,17 +420,17 @@ export function FocusPlayer(props: FocusPlayerProps) {
                 aria-label={isPlaying ? "Pause" : "Play"}
                 onClick={onTogglePlay}
               >
-                <Icon name={isPlaying ? "pause" : "play"} size={20} />
+                <Icon name={isPlaying ? "pause" : "play"} size={27} />
               </button>
             </KaTeXTooltip>
             <KaTeXTooltip formula="\text{Next}">
               <button
                 type="button"
-                className="icon-btn ghost"
+                className="transport-btn transport-btn--next"
                 aria-label="Next"
                 onClick={onNext}
               >
-                <Icon name="next" size={21} />
+                <Icon name="next" size={24} />
               </button>
             </KaTeXTooltip>
           </div>
@@ -432,7 +503,11 @@ export function FocusPlayer(props: FocusPlayerProps) {
       <MusicLibrary
         open={libraryOpen}
         tracks={tracks}
+        activeProfileName={profileLabel}
+        currentTrackCategory={trackCategory}
         currentTrackId={currentTrackId}
+        favoriteTrackIds={favoriteTrackIds}
+        favoritesOnly={favoritesOnly}
         musicDir={musicDir}
         busy={busy}
         onClose={() => onToggleLibrary(false)}
@@ -443,9 +518,10 @@ export function FocusPlayer(props: FocusPlayerProps) {
         onOpenFolder={onOpenFolder}
         onSelect={(trackId) => {
           void onSelect(trackId, true);
-          onToggleLibrary(false);
         }}
         onRemove={onRemove}
+        onToggleFavorite={onToggleFavorite}
+        onSetFavoritesOnly={onSetFavoritesOnly}
       />
     </div>
   );

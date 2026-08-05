@@ -18,6 +18,7 @@ description: Enforces a Brain.fm-inspired focus-player UI with almost no visible
 5. Use calm dark tones (bronze, midnight blue, soft neutrals) with white foreground and occasional red accent for volume/notifications.
 6. Do not copy Brain.fm branding, logos, or proprietary assets. Keep the product identity as FocusFlow / local music.
 7. Local music is first-class: library actions must support import into the managed AppData `music` folder and opening that folder.
+8. Wszystko ma być smooth, przyjemne, z ultra płynnymi przejściami i animacjami; całość ma być bardzo płynna i low friction. Unikaj nagłych zmian, migotania, skoków layoutu i animacji, które obniżają FPS.
 
 ## Tooltip pattern
 

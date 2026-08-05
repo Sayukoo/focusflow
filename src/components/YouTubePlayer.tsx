@@ -44,6 +44,15 @@ interface YouTubeApi {
   ) => YouTubePlayerInstance;
 }
 
+const YOUTUBE_STATE_UNSTARTED = -1;
+const YOUTUBE_STATE_ENDED = 0;
+const YOUTUBE_STATE_PLAYING = 1;
+const YOUTUBE_STATE_PAUSED = 2;
+const YOUTUBE_STATE_BUFFERING = 3;
+const YOUTUBE_STATE_CUED = 5;
+const RESUME_RETRY_LIMIT = 6;
+const RESUME_RETRY_DELAY_MS = 350;
+
 declare global {
   interface Window {
     YT?: YouTubeApi;
@@ -67,6 +76,7 @@ export function YouTubePlayer({
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayerInstance | null>(null);
   const lastSeekTokenRef = useRef<number | null>(null);
+  const resumeTimerRef = useRef<number | null>(null);
   const playbackRef = useRef({ playing, volume });
   const callbacksRef = useRef({
     onDuration,
@@ -86,6 +96,10 @@ export function YouTubePlayer({
 
   useEffect(() => {
     if (!track?.videoId || !hostRef.current) {
+      if (resumeTimerRef.current !== null) {
+        window.clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
       playerRef.current?.destroy();
       playerRef.current = null;
       return;
@@ -93,8 +107,45 @@ export function YouTubePlayer({
 
     let disposed = false;
     const host = hostRef.current;
+    let resumeAttempts = 0;
+
+    const clearResumeTimer = () => {
+      if (resumeTimerRef.current !== null) {
+        window.clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
+    };
+
+    const resumeIfIntended = (player: YouTubePlayerInstance) => {
+      clearResumeTimer();
+      if (disposed || playerRef.current !== player || !playbackRef.current.playing) {
+        return;
+      }
+
+      const attempt = () => {
+        resumeTimerRef.current = null;
+        if (
+          disposed ||
+          playerRef.current !== player ||
+          !playbackRef.current.playing ||
+          resumeAttempts >= RESUME_RETRY_LIMIT
+        ) {
+          return;
+        }
+
+        resumeAttempts += 1;
+        player.playVideo();
+        if (resumeAttempts < RESUME_RETRY_LIMIT) {
+          resumeTimerRef.current = window.setTimeout(attempt, RESUME_RETRY_DELAY_MS);
+        }
+      };
+
+      attempt();
+    };
+
     host.replaceChildren();
     lastSeekTokenRef.current = null;
+    clearResumeTimer();
 
     void loadYouTubeApi()
       .then((api) => {
@@ -115,14 +166,31 @@ export function YouTubePlayer({
           },
           events: {
             onReady: (event) => {
+              resumeAttempts = 0;
               event.target.setVolume(playbackRef.current.volume * 100);
               callbacksRef.current.onDuration(event.target.getDuration() || 0);
-              if (playbackRef.current.playing) event.target.playVideo();
+              if (playbackRef.current.playing) resumeIfIntended(event.target);
             },
             onStateChange: (event) => {
-              if (event.data === 1) callbacksRef.current.onPlaying(true);
-              if (event.data === 2) callbacksRef.current.onPlaying(false);
-              if (event.data === 0) {
+              if (event.data === YOUTUBE_STATE_PLAYING) {
+                resumeAttempts = 0;
+                clearResumeTimer();
+                callbacksRef.current.onPlaying(true);
+              }
+              if (
+                event.data === YOUTUBE_STATE_UNSTARTED ||
+                event.data === YOUTUBE_STATE_PAUSED ||
+                event.data === YOUTUBE_STATE_BUFFERING ||
+                event.data === YOUTUBE_STATE_CUED
+              ) {
+                if (playbackRef.current.playing) {
+                  resumeIfIntended(event.target);
+                } else if (event.data === YOUTUBE_STATE_PAUSED) {
+                  callbacksRef.current.onPlaying(false);
+                }
+              }
+              if (event.data === YOUTUBE_STATE_ENDED) {
+                clearResumeTimer();
                 callbacksRef.current.onPlaying(false);
                 callbacksRef.current.onEnded();
               }
@@ -134,11 +202,16 @@ export function YouTubePlayer({
         });
       })
       .catch((error: unknown) => {
-        onError(error instanceof Error ? error.message : String(error));
+        if (!disposed) {
+          callbacksRef.current.onError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
       });
 
     return () => {
       disposed = true;
+      clearResumeTimer();
       playerRef.current?.destroy();
       playerRef.current = null;
     };

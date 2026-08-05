@@ -6,6 +6,7 @@ import {
   formatTimerLabel,
   loadFavoriteTrackIds,
   nextTrackIndex,
+  parseRemoteLink,
   parseYouTubeVideoId,
   previousTrackIndex,
   sanitizeTitle,
@@ -121,6 +122,36 @@ describe("parseYouTubeVideoId", () => {
   it("rejects non-YouTube and incomplete links", () => {
     expect(parseYouTubeVideoId("https://example.com/watch?v=vWjl07A3rZg")).toBeNull();
     expect(parseYouTubeVideoId("not a link")).toBeNull();
+  });
+});
+
+describe("parseRemoteLink", () => {
+  it("recognizes Spotify and SoundCloud links", () => {
+    expect(parseRemoteLink("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")).toMatchObject({
+      provider: "spotify",
+      providerId: "4uLU6hMCjMI75M1A2tKUQC",
+      providerKind: "track",
+    });
+    expect(parseRemoteLink("https://open.spotify.com/intl-pl/track/4uLU6hMCjMI75M1A2tKUQC")).toMatchObject({
+      provider: "spotify",
+      providerKind: "track",
+    });
+    expect(parseRemoteLink("https://soundcloud.com/artist/late-night-focus")).toMatchObject({
+      provider: "soundcloud",
+    });
+    expect(
+      parseRemoteLink(
+        "https://www.tiktok.com/@lofi.1hour/video/7649770990515326216",
+      ),
+    ).toMatchObject({
+      provider: "tiktok",
+      providerId: "7649770990515326216",
+      providerKind: "video",
+    });
+  });
+
+  it("rejects unsupported streaming links", () => {
+    expect(parseRemoteLink("https://example.com/audio.mp3")).toBeNull();
   });
 });
 

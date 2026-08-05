@@ -18,7 +18,11 @@ function App() {
       tracks={player.tracks}
       musicDir={player.musicDir}
       currentTrack={player.currentTrack}
+      profiles={player.profiles}
+      activeProfileId={player.activeProfileId}
+      profilePickerOpen={player.profilePickerOpen}
       favoriteTrackIds={player.favoriteTrackIds}
+      favoritesOnly={player.favoritesOnly}
       currentTrackId={player.currentTrackId}
       isPlaying={player.isPlaying}
       volume={player.volume}
@@ -32,15 +36,19 @@ function App() {
       busy={player.busy}
       error={player.error}
       onToggleLibrary={player.setLibraryOpen}
+      onToggleProfilePicker={player.setProfilePickerOpen}
+      onSelectProfile={(profileId) => void player.switchProfile(profileId)}
+      onCreateProfile={(name) => void player.createProfile(name)}
+      onDeleteProfile={(profileId) => void player.deleteProfile(profileId)}
       onImport={() => void player.importTracks()}
-      onAddLink={(url) => void player.addYouTubeLink(url)}
+      onAddLink={(url) => void player.addRemoteLink(url)}
       onDropFiles={(files) => void player.importDroppedFiles(files)}
-      youtubeSeekRequest={player.youtubeSeekRequest}
-      onYoutubeTime={player.onYoutubeTime}
-      onYoutubeDuration={player.onYoutubeDuration}
-      onYoutubePlaying={player.onYoutubePlaying}
-      onYoutubeEnded={player.onYoutubeEnded}
-      onYoutubeError={player.onYoutubeError}
+      remoteSeekRequest={player.remoteSeekRequest}
+      onRemoteTime={player.onRemoteTime}
+      onRemoteDuration={player.onRemoteDuration}
+      onRemotePlaying={player.onRemotePlaying}
+      onRemoteEnded={player.onRemoteEnded}
+      onRemoteError={player.onRemoteError}
       onRefresh={() =>
         void player.refresh().catch((error: unknown) => {
           player.setError(error instanceof Error ? error.message : String(error));
@@ -49,17 +57,16 @@ function App() {
       onOpenFolder={() => void player.openMusicFolder()}
       onSelect={(trackId, autoplay) => void player.selectTrack(trackId, autoplay)}
       onRemove={(track) => void player.removeTrack(track)}
+      onSetFavoritesOnly={player.setFavoritesOnly}
       onTogglePlay={() => void player.togglePlay()}
       onNext={() => void player.playNext()}
       onPrevious={() => void player.playPrevious()}
       onSeek={player.seek}
       onVolume={player.setVolume}
       onToggleFavorite={player.toggleFavorite}
-      onCycleMode={player.cycleMode}
       onOpenTimerSettings={() => player.setTimerSettingsOpen(true)}
       onCloseTimerSettings={() => player.setTimerSettingsOpen(false)}
       onTimerSettingsChange={player.updateTimerSettings}
-      onResetSession={player.resetSession}
       onClearError={() => player.setError(null)}
     />
   );

@@ -1,17 +1,22 @@
+export type RemoteProvider = "youtube" | "spotify" | "soundcloud" | "tiktok";
+
 export interface Track {
   id: string;
   title: string;
   filename: string;
   path: string;
   extension: string;
-  source?: "managed" | "browser" | "youtube";
+  source?: "managed" | "browser" | RemoteProvider;
   url?: string;
   videoId?: string;
+  providerId?: string;
+  providerKind?: string;
   thumbnail?: string;
   author?: string;
+  category?: string;
 }
 
-export type FocusMode = "deep" | "flow" | "calm";
+export type FocusMode = "deep" | "energizing";
 
 export type DurationPreset = "infinity" | 15 | 25 | 45 | 60;
 

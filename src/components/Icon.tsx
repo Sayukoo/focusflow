@@ -3,6 +3,7 @@ import type { ReactElement, SVGProps } from "react";
 export type IconName =
   | "arrow-left"
   | "chevron-down"
+  | "check"
   | "clock"
   | "close"
   | "folder"
@@ -61,6 +62,7 @@ const iconPaths: Record<IconName, ReactElement> = {
     </>
   ),
   "chevron-down": <path d="m7 9 5 5 5-5" />,
+  check: <path d="m5 12.5 4.2 4.2L19 7" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="8.4" />

@@ -3,20 +3,19 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  fetchYouTubeMetadata,
+  fetchRemoteMetadata,
   formatTimerLabel,
   findTrackIndex,
   isSupportedAudioFile,
   isTauriRuntime,
-  loadFavoriteTrackIds,
+  isRemoteTrack,
   loadPlayerSnapshot,
-  loadYouTubeTracks,
+  loadRemoteTracks,
   nextTrackIndex,
-  parseYouTubeVideoId,
+  parseRemoteLink,
   previousTrackIndex,
   savePlayerSnapshot,
-  saveFavoriteTrackIds,
-  saveYouTubeTracks,
+  saveRemoteTracks,
   sanitizeTitle,
   uniqueFilename,
 } from "../lib/audio";
@@ -27,6 +26,21 @@ import {
   type TimerSettings,
   type Track,
 } from "../types";
+import {
+  addCustomProfile,
+  assignTracksToProfile,
+  deleteCustomProfile,
+  getProfileFavoriteIds,
+  getProfileTrackIds,
+  loadProfileStore,
+  reconcileProfileTracks,
+  removeTracksFromProfile,
+  removeTracksFromProfiles,
+  saveProfileStore,
+  setActiveProfile,
+  toggleProfileFavorite,
+  type ProfileStore,
+} from "../lib/profiles";
 
 const AUDIO_FILTERS = [
   {
@@ -39,9 +53,18 @@ export function useAudioLibrary() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tracksRef = useRef<Track[]>([]);
   const browserTracksRef = useRef<Track[]>([]);
-  const youtubeTracksRef = useRef<Track[]>(loadYouTubeTracks());
+  const remoteTracksRef = useRef<Track[]>(loadRemoteTracks());
+  const [profileStore, setProfileStore] = useState<ProfileStore>(() =>
+    loadProfileStore(),
+  );
+  const profileStoreRef = useRef<ProfileStore>(profileStore);
+  const activeProfileIdRef = useRef(profileStore.activeProfileId);
   const currentIdRef = useRef<string | null>(null);
   const playingRef = useRef(false);
+  const favoritesOnlyRef = useRef(false);
+  const favoriteTrackIdsRef = useRef<string[]>(
+    getProfileFavoriteIds(profileStore),
+  );
   const timerSettingsRef = useRef<TimerSettings>(DEFAULT_TIMER_SETTINGS);
   const loadRequestRef = useRef(0);
   const lastRenderedProgressRef = useRef(0);
@@ -53,7 +76,7 @@ export function useAudioLibrary() {
   const [volume, setVolumeState] = useState(0.72);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [youtubeSeekRequest, setYoutubeSeekRequest] = useState<{
+  const [remoteSeekRequest, setRemoteSeekRequest] = useState<{
     value: number;
     token: number;
   } | null>(null);
@@ -64,17 +87,46 @@ export function useAudioLibrary() {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [timerSettingsOpen, setTimerSettingsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [favoriteTrackIds, setFavoriteTrackIds] = useState<string[]>(loadFavoriteTrackIds);
+  const [favoriteTrackIds, setFavoriteTrackIds] = useState<string[]>(() =>
+    getProfileFavoriteIds(profileStore),
+  );
+  const [favoritesOnly, setFavoritesOnlyState] = useState(false);
   const [ready, setReady] = useState(false);
   const runningInTauri = useMemo(() => isTauriRuntime(), []);
+
+  const commitProfileStore = useCallback((next: ProfileStore) => {
+    profileStoreRef.current = next;
+    activeProfileIdRef.current = next.activeProfileId;
+    setProfileStore(next);
+    setFavoriteTrackIds(getProfileFavoriteIds(next));
+    favoriteTrackIdsRef.current = getProfileFavoriteIds(next);
+    saveProfileStore(next);
+  }, []);
+
+  const filterTracksForProfile = useCallback(
+    (allTracks: Track[], profileId = activeProfileIdRef.current) => {
+      const profileTrackIds = new Set(
+        getProfileTrackIds(profileStoreRef.current, profileId),
+      );
+      return allTracks.filter((track) => profileTrackIds.has(track.id));
+    },
+    [],
+  );
 
   const currentIndex = useMemo(
     () => findTrackIndex(tracks, currentTrackId),
     [tracks, currentTrackId],
   );
   const currentTrack = currentIndex >= 0 ? tracks[currentIndex] : null;
+  const getPlaybackTracks = useCallback(() => {
+    if (!favoritesOnlyRef.current) return tracksRef.current;
+    return tracksRef.current.filter((track) =>
+      favoriteTrackIdsRef.current.includes(track.id),
+    );
+  }, []);
 
   useEffect(() => {
     tracksRef.current = tracks;
@@ -89,8 +141,23 @@ export function useAudioLibrary() {
   }, [isPlaying]);
 
   useEffect(() => {
+    favoriteTrackIdsRef.current = favoriteTrackIds;
+  }, [favoriteTrackIds]);
+
+  useEffect(() => {
+    favoritesOnlyRef.current = favoritesOnly;
+  }, [favoritesOnly]);
+
+  useEffect(() => {
     timerSettingsRef.current = timerSettings;
   }, [timerSettings]);
+
+  useEffect(() => {
+    const activeProfile = profileStore.profiles.find(
+      (profile) => profile.id === profileStore.activeProfileId,
+    );
+    setMode(activeProfile?.theme ?? "deep");
+  }, [profileStore]);
 
   const loadTrack = useCallback(async (track: Track, autoplay: boolean) => {
     const audio = audioRef.current;
@@ -105,9 +172,10 @@ export function useAudioLibrary() {
     setDuration(0);
     lastRenderedProgressRef.current = 0;
 
-    if (track.source === "youtube") {
+    if (isRemoteTrack(track)) {
       audio.removeAttribute("src");
       audio.load();
+      playingRef.current = autoplay;
       setIsPlaying(false);
       if (autoplay) {
         setIsPlaying(true);
@@ -116,6 +184,7 @@ export function useAudioLibrary() {
       return;
     }
 
+    playingRef.current = false;
     setIsPlaying(false);
     audio.src =
       runningInTauri && track.source !== "browser"
@@ -136,7 +205,16 @@ export function useAudioLibrary() {
 
   const refresh = useCallback(async () => {
     if (!runningInTauri) {
-      const listed = [...browserTracksRef.current, ...youtubeTracksRef.current];
+      const allTracks = [
+        ...browserTracksRef.current,
+        ...remoteTracksRef.current,
+      ];
+      const nextProfileStore = reconcileProfileTracks(
+        profileStoreRef.current,
+        allTracks.map((track) => track.id),
+      );
+      commitProfileStore(nextProfileStore);
+      const listed = filterTracksForProfile(allTracks);
       setMusicDir("Browser preview · selected files");
       setTracks(listed);
       tracksRef.current = listed;
@@ -147,12 +225,22 @@ export function useAudioLibrary() {
       invoke<string>("get_music_dir"),
       invoke<Track[]>("list_tracks"),
     ]);
-    const listed = [...localTracks, ...youtubeTracksRef.current];
+    const allTracks = [...localTracks, ...remoteTracksRef.current];
+    const nextProfileStore = reconcileProfileTracks(
+      profileStoreRef.current,
+      allTracks.map((track) => track.id),
+    );
+    commitProfileStore(nextProfileStore);
+    const listed = filterTracksForProfile(allTracks);
     setMusicDir(dir);
     setTracks(listed);
     tracksRef.current = listed;
     return listed;
-  }, [runningInTauri]);
+  }, [
+    commitProfileStore,
+    filterTracksForProfile,
+    runningInTauri,
+  ]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -174,7 +262,7 @@ export function useAudioLibrary() {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
-      const list = tracksRef.current;
+      const list = getPlaybackTracks();
       const index = findTrackIndex(list, currentIdRef.current);
       const next = nextTrackIndex(index, list.length);
       if (next >= 0) {
@@ -196,9 +284,6 @@ export function useAudioLibrary() {
       const nextVolume = Math.min(1, Math.max(0, snapshot.volume));
       setVolumeState(nextVolume);
       audio.volume = nextVolume;
-    }
-    if (snapshot.mode === "deep" || snapshot.mode === "flow" || snapshot.mode === "calm") {
-      setMode(snapshot.mode);
     }
     if (isTimerSettings(snapshot.timerSettings)) {
       setTimerSettings(snapshot.timerSettings);
@@ -244,7 +329,7 @@ export function useAudioLibrary() {
       audio.removeEventListener("ended", onEnded);
       audioRef.current = null;
     };
-  }, [loadTrack, refresh, runningInTauri]);
+  }, [getPlaybackTracks, loadTrack, refresh, runningInTauri]);
 
   useEffect(() => {
     if (!ready) return;
@@ -264,10 +349,6 @@ export function useAudioLibrary() {
       timerSettings,
     });
   }, [ready, currentTrackId, volume, mode, timerSettings]);
-
-  useEffect(() => {
-    saveFavoriteTrackIds(favoriteTrackIds);
-  }, [favoriteTrackIds]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -317,17 +398,23 @@ export function useAudioLibrary() {
     );
 
     if (!currentIdRef.current) {
-      if (tracksRef.current.length === 0) {
+      const queue = getPlaybackTracks();
+      if (queue.length === 0) {
         setLibraryOpen(true);
-        setError("Add music to begin.");
+        setError(
+          favoritesOnlyRef.current
+            ? "Add a favorite to start this queue."
+            : "Add music to begin.",
+        );
         return;
       }
-      await loadTrack(tracksRef.current[0], true);
+      await loadTrack(queue[0], true);
       return;
     }
 
-    if (activeTrack?.source === "youtube") {
+    if (isRemoteTrack(activeTrack)) {
       if (playingRef.current) {
+        playingRef.current = false;
         setIsPlaying(false);
         return;
       }
@@ -339,6 +426,7 @@ export function useAudioLibrary() {
       ) {
         setElapsed(0);
       }
+      playingRef.current = true;
       setIsPlaying(true);
       setSessionStarted(true);
       return;
@@ -361,10 +449,10 @@ export function useAudioLibrary() {
     } else {
       audio.pause();
     }
-  }, [elapsed, loadTrack, timerSettings]);
+  }, [elapsed, getPlaybackTracks, loadTrack, timerSettings]);
 
   const playNext = useCallback(async (forceAutoplay = false) => {
-    const list = tracksRef.current;
+    const list = getPlaybackTracks();
     const index = findTrackIndex(list, currentIdRef.current);
     const next = nextTrackIndex(index, list.length);
     if (next >= 0) {
@@ -373,27 +461,40 @@ export function useAudioLibrary() {
         forceAutoplay || playingRef.current || index < 0,
       );
     }
-  }, [loadTrack]);
+  }, [getPlaybackTracks, loadTrack]);
 
-  const onYoutubeTime = useCallback((value: number) => {
+  const onRemoteTime = useCallback((value: number) => {
+    if (
+      !Number.isFinite(value) ||
+      (value !== 0 &&
+        value >= lastRenderedProgressRef.current &&
+        value - lastRenderedProgressRef.current < 0.35)
+    ) {
+      return;
+    }
+    lastRenderedProgressRef.current = value;
     setProgress(value);
   }, []);
 
-  const onYoutubeDuration = useCallback((value: number) => {
-    setDuration(value);
+  const onRemoteDuration = useCallback((value: number) => {
+    if (Number.isFinite(value) && value > 0) {
+      setDuration(value);
+    }
   }, []);
 
-  const onYoutubePlaying = useCallback((playing: boolean) => {
+  const onRemotePlaying = useCallback((playing: boolean) => {
+    playingRef.current = playing;
     setIsPlaying(playing);
     if (playing) setSessionStarted(true);
   }, []);
 
-  const onYoutubeEnded = useCallback(() => {
+  const onRemoteEnded = useCallback(() => {
     void playNext(true);
   }, [playNext]);
 
-  const onYoutubeError = useCallback((message: string) => {
+  const onRemoteError = useCallback((message: string) => {
     setError(message);
+    playingRef.current = false;
     setIsPlaying(false);
   }, []);
 
@@ -402,8 +503,8 @@ export function useAudioLibrary() {
     const activeTrack = tracksRef.current.find(
       (track) => track.id === currentIdRef.current,
     );
-    if (activeTrack?.source === "youtube" && progress > 3) {
-      setYoutubeSeekRequest({
+    if (isRemoteTrack(activeTrack) && progress > 3) {
+      setRemoteSeekRequest({
         value: 0,
         token: Date.now() + Math.random(),
       });
@@ -416,13 +517,13 @@ export function useAudioLibrary() {
       setProgress(0);
       return;
     }
-    const list = tracksRef.current;
+    const list = getPlaybackTracks();
     const index = findTrackIndex(list, currentIdRef.current);
     const prev = previousTrackIndex(index, list.length);
     if (prev >= 0) {
       await loadTrack(list[prev], playingRef.current);
     }
-  }, [loadTrack, progress]);
+  }, [getPlaybackTracks, loadTrack, progress]);
 
   const seek = useCallback((value: number) => {
     const audio = audioRef.current;
@@ -431,11 +532,12 @@ export function useAudioLibrary() {
     const activeTrack = tracksRef.current.find(
       (track) => track.id === currentIdRef.current,
     );
-    if (activeTrack?.source === "youtube") {
-      setYoutubeSeekRequest({
+    if (isRemoteTrack(activeTrack)) {
+      setRemoteSeekRequest({
         value,
         token: Date.now() + Math.random(),
       });
+      lastRenderedProgressRef.current = value;
       setProgress(value);
       return;
     }
@@ -450,12 +552,37 @@ export function useAudioLibrary() {
   }, []);
 
   const toggleFavorite = useCallback((trackId: string) => {
-    setFavoriteTrackIds((current) =>
-      current.includes(trackId)
-        ? current.filter((id) => id !== trackId)
-        : [...current, trackId],
+    const next = toggleProfileFavorite(
+      profileStoreRef.current,
+      activeProfileIdRef.current,
+      trackId,
     );
-  }, []);
+    commitProfileStore(next);
+  }, [commitProfileStore]);
+
+  const setFavoritesQueue = useCallback((enabled: boolean) => {
+    favoritesOnlyRef.current = enabled;
+    setFavoritesOnlyState(enabled);
+    if (!enabled) return;
+
+    const firstFavorite = tracksRef.current.find((track) =>
+      favoriteTrackIdsRef.current.includes(track.id),
+    );
+    if (!firstFavorite) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      setSessionStarted(false);
+      setError("Favorite a track to build this queue.");
+      return;
+    }
+
+    const current = tracksRef.current.find(
+      (track) => track.id === currentIdRef.current,
+    );
+    if (!current || !favoriteTrackIdsRef.current.includes(current.id)) {
+      void loadTrack(firstFavorite, playingRef.current);
+    }
+  }, [loadTrack]);
 
   const pickBrowserFiles = useCallback((directory = false) => {
     return new Promise<File[]>((resolve) => {
@@ -502,7 +629,16 @@ export function useAudioLibrary() {
       });
 
       const nextBrowserTracks = [...browserTracksRef.current, ...imported];
-      const next = [...nextBrowserTracks, ...youtubeTracksRef.current];
+      const nextProfileStore = assignTracksToProfile(
+        profileStoreRef.current,
+        activeProfileIdRef.current,
+        imported.map((track) => track.id),
+      );
+      commitProfileStore(nextProfileStore);
+      const next = filterTracksForProfile([
+        ...nextBrowserTracks,
+        ...remoteTracksRef.current,
+      ]);
       browserTracksRef.current = nextBrowserTracks;
       tracksRef.current = next;
       setTracks(next);
@@ -514,12 +650,18 @@ export function useAudioLibrary() {
 
       return imported;
     },
-    [loadTrack],
+    [commitProfileStore, filterTracksForProfile, loadTrack],
   );
 
   const importManagedPaths = useCallback(
     async (paths: string[]) => {
       const imported = await invoke<Track[]>("import_tracks", { paths });
+      const nextProfileStore = assignTracksToProfile(
+        profileStoreRef.current,
+        activeProfileIdRef.current,
+        imported.map((track) => track.id),
+      );
+      commitProfileStore(nextProfileStore);
       const listed = await refresh();
       if (!currentIdRef.current) {
         const first = imported[0] ?? listed[0];
@@ -529,48 +671,75 @@ export function useAudioLibrary() {
       }
       return imported;
     },
-    [loadTrack, refresh],
+    [commitProfileStore, loadTrack, refresh],
   );
 
-  const addYouTubeLink = useCallback(
+  const addRemoteLink = useCallback(
     async (value: string) => {
       const url = value.trim();
-      const videoId = parseYouTubeVideoId(url);
-      if (!videoId) {
-        setError("Paste a valid YouTube video link.");
+      const parsed = parseRemoteLink(url);
+      if (!parsed) {
+        setError("Paste a valid YouTube, Spotify, SoundCloud or TikTok link.");
         return;
       }
 
       setBusy(true);
       setError(null);
       try {
-        const existing = youtubeTracksRef.current.find(
-          (track) => track.videoId === videoId,
+        const existing = remoteTracksRef.current.find(
+          (track) =>
+            track.source === parsed.provider &&
+            (track.url === url ||
+              track.providerId === parsed.providerId ||
+              (parsed.provider === "youtube" &&
+                track.videoId === parsed.providerId)),
         );
         if (existing) {
-          await loadTrack(existing, false);
+          commitProfileStore(
+            assignTracksToProfile(
+              profileStoreRef.current,
+              activeProfileIdRef.current,
+              [existing.id],
+            ),
+          );
+          const listed = await refresh();
+          await loadTrack(
+            listed.find((track) => track.id === existing.id) ?? existing,
+            false,
+          );
           return;
         }
 
-        const metadata = await fetchYouTubeMetadata(url, videoId);
+        const metadata = await fetchRemoteMetadata(url, parsed);
+        const providerId = metadata.providerId ?? parsed.providerId;
         const remoteTrack: Track = {
-          id: `youtube:${videoId}`,
+          id: `${parsed.provider}:${providerId}`,
           title: metadata.title,
           filename: metadata.title,
           path: url,
-          extension: "youtube",
-          source: "youtube",
+          extension: parsed.provider,
+          source: parsed.provider,
           url,
-          videoId,
+          videoId:
+            parsed.provider === "youtube" ? providerId : undefined,
+          providerId,
+          providerKind: parsed.providerKind,
           thumbnail: metadata.thumbnail,
           author: metadata.author,
         };
 
-        youtubeTracksRef.current = [
+        remoteTracksRef.current = [
           remoteTrack,
-          ...youtubeTracksRef.current,
+          ...remoteTracksRef.current,
         ];
-        saveYouTubeTracks(youtubeTracksRef.current);
+        saveRemoteTracks(remoteTracksRef.current);
+        commitProfileStore(
+          assignTracksToProfile(
+            profileStoreRef.current,
+            activeProfileIdRef.current,
+            [remoteTrack.id],
+          ),
+        );
         const listed = await refresh();
         const added = listed.find((track) => track.id === remoteTrack.id);
         if (added) {
@@ -582,7 +751,7 @@ export function useAudioLibrary() {
         setBusy(false);
       }
     },
-    [loadTrack, refresh],
+    [commitProfileStore, loadTrack, refresh],
   );
 
   const importTracks = useCallback(async () => {
@@ -688,79 +857,91 @@ export function useAudioLibrary() {
       setError(null);
       try {
         const wasCurrent = track.id === currentIdRef.current;
-        if (track.source === "youtube") {
-          youtubeTracksRef.current = youtubeTracksRef.current.filter(
-            (item) => item.id !== track.id,
-          );
-          saveYouTubeTracks(youtubeTracksRef.current);
-          const listed = await refresh();
-
-          if (wasCurrent) {
-            audioRef.current?.pause();
-            setIsPlaying(false);
-            setSessionStarted(false);
-            if (listed[0]) {
-              await loadTrack(listed[0], false);
-            } else {
-              currentIdRef.current = null;
-              setCurrentTrackId(null);
-              setProgress(0);
-              setDuration(0);
-            }
-          }
-          return;
-        }
-
-        if (!runningInTauri && track.source === "browser") {
-          URL.revokeObjectURL(track.path);
-          const browserListed = browserTracksRef.current.filter(
-            (item) => item.id !== track.id,
-          );
-          const listed = [...browserListed, ...youtubeTracksRef.current];
-          browserTracksRef.current = browserListed;
-          tracksRef.current = listed;
-          setTracks(listed);
-
-          if (wasCurrent) {
-            audioRef.current?.pause();
-            setSessionStarted(false);
-            if (listed[0]) {
-              await loadTrack(listed[0], false);
-            } else {
-              currentIdRef.current = null;
-              setCurrentTrackId(null);
-              audioRef.current?.removeAttribute("src");
-              setProgress(0);
-              setDuration(0);
-            }
-          }
-          return;
-        }
-
-        await invoke("delete_track", { path: track.path });
-        const listed = await refresh();
-        if (wasCurrent) {
+        const profileAfterRemoval = removeTracksFromProfile(
+          profileStoreRef.current,
+          activeProfileIdRef.current,
+          [track.id],
+        );
+        const sharedWithAnotherProfile = Object.entries(
+          profileAfterRemoval.trackIdsByProfile,
+        ).some(
+          ([profileId, ids]) =>
+            profileId !== activeProfileIdRef.current && ids.includes(track.id),
+        );
+        const removeFromStorage = !sharedWithAnotherProfile;
+        const clearCurrent = async () => {
+          if (!wasCurrent) return;
           audioRef.current?.pause();
+          playingRef.current = false;
+          setIsPlaying(false);
           setSessionStarted(false);
-          if (listed[0]) {
-            await loadTrack(listed[0], false);
+          const nextTrack = getPlaybackTracks()[0];
+          if (nextTrack) {
+            await loadTrack(nextTrack, false);
           } else {
             currentIdRef.current = null;
             setCurrentTrackId(null);
-            if (audioRef.current) {
-              audioRef.current.removeAttribute("src");
+            if (!isRemoteTrack(track)) {
+              audioRef.current?.removeAttribute("src");
             }
             setProgress(0);
             setDuration(0);
           }
+        };
+
+        if (isRemoteTrack(track)) {
+          if (removeFromStorage) {
+            remoteTracksRef.current = remoteTracksRef.current.filter(
+              (item) => item.id !== track.id,
+            );
+            saveRemoteTracks(remoteTracksRef.current);
+          }
+          commitProfileStore(
+            removeFromStorage
+              ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
+              : profileAfterRemoval,
+          );
+          await refresh();
+          await clearCurrent();
+          return;
         }
+
+        if (!runningInTauri && track.source === "browser") {
+          const browserListed = removeFromStorage
+            ? browserTracksRef.current.filter((item) => item.id !== track.id)
+            : browserTracksRef.current;
+          if (removeFromStorage) URL.revokeObjectURL(track.path);
+          const listed = [...browserListed, ...remoteTracksRef.current];
+          browserTracksRef.current = browserListed;
+          commitProfileStore(
+            removeFromStorage
+              ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
+              : profileAfterRemoval,
+          );
+          const visible = filterTracksForProfile(listed);
+          tracksRef.current = visible;
+          setTracks(visible);
+          await clearCurrent();
+          return;
+        }
+
+        if (removeFromStorage) {
+          await invoke("delete_track", { path: track.path });
+        }
+        commitProfileStore(
+          removeFromStorage
+            ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
+            : profileAfterRemoval,
+        );
+        await refresh();
+        await clearCurrent();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(false);
       }
     },
-    [loadTrack, refresh, runningInTauri],
+    [commitProfileStore, filterTracksForProfile, loadTrack, refresh, runningInTauri],
   );
 
   const openMusicFolder = useCallback(async () => {
@@ -783,17 +964,73 @@ export function useAudioLibrary() {
     }
   }, [addBrowserFiles, pickBrowserFiles, runningInTauri]);
 
+  const switchProfile = useCallback(
+    async (profileId: string) => {
+      const profile = profileStoreRef.current.profiles.find(
+        (item) => item.id === profileId,
+      );
+      if (!profile || profile.id === activeProfileIdRef.current) {
+        setProfilePickerOpen(false);
+        return;
+      }
+
+      audioRef.current?.pause();
+      playingRef.current = false;
+      currentIdRef.current = null;
+      setCurrentTrackId(null);
+      setIsPlaying(false);
+      setSessionStarted(false);
+      setProgress(0);
+      setDuration(0);
+      audioRef.current?.removeAttribute("src");
+      audioRef.current?.load();
+      favoritesOnlyRef.current = false;
+      setFavoritesOnlyState(false);
+      setProfilePickerOpen(false);
+
+      commitProfileStore(
+        setActiveProfile(profileStoreRef.current, profile.id),
+      );
+      setMode(profile.theme);
+      const listed = await refresh();
+      if (listed[0]) {
+        await loadTrack(listed[0], false);
+      }
+    },
+    [commitProfileStore, loadTrack, refresh],
+  );
+
+  const createProfile = useCallback(
+    async (name: string) => {
+      const result = addCustomProfile(profileStoreRef.current, name);
+      if (!result.profile) return false;
+      commitProfileStore(result.store);
+      await switchProfile(result.profile.id);
+      return true;
+    },
+    [commitProfileStore, switchProfile],
+  );
+
+  const deleteProfile = useCallback(
+    async (profileId: string) => {
+      const wasActive = profileStoreRef.current.activeProfileId === profileId;
+      const next = deleteCustomProfile(profileStoreRef.current, profileId);
+      if (next === profileStoreRef.current) return;
+      if (wasActive) {
+        await switchProfile("deep-work");
+        commitProfileStore(
+          deleteCustomProfile(profileStoreRef.current, profileId),
+        );
+        return;
+      }
+      commitProfileStore(next);
+    },
+    [commitProfileStore, switchProfile],
+  );
+
   const resetSession = useCallback(() => {
     setElapsed(0);
     setSessionStarted(false);
-  }, []);
-
-  const cycleMode = useCallback(() => {
-    setMode((current) => {
-      if (current === "deep") return "flow";
-      if (current === "flow") return "calm";
-      return "deep";
-    });
   }, []);
 
   const updateTimerSettings = useCallback((next: TimerSettings) => {
@@ -821,14 +1058,23 @@ export function useAudioLibrary() {
       previous.durationMinutes !== normalized.durationMinutes
     ) {
       setElapsed(0);
-      setSessionStarted(false);
+      setSessionStarted((started) => started || playingRef.current);
     }
   }, []);
+
+  const timerLabel = formatTimerLabel(elapsed, timerSettings);
+
+  useEffect(() => {
+    document.title = `${timerLabel} · FocusFlow`;
+  }, [timerLabel]);
 
   return {
     tracks,
     musicDir,
     currentTrack,
+    profiles: profileStore.profiles,
+    activeProfileId: profileStore.activeProfileId,
+    profilePickerOpen,
     favoriteTrackIds,
     currentTrackId,
     isPlaying,
@@ -836,7 +1082,7 @@ export function useAudioLibrary() {
     progress,
     duration,
     elapsed,
-    timerLabel: formatTimerLabel(elapsed, timerSettings),
+    timerLabel,
     mode,
     timerSettings,
     timerSettingsOpen,
@@ -845,10 +1091,14 @@ export function useAudioLibrary() {
     error,
     ready,
     setLibraryOpen,
+    setProfilePickerOpen,
+    switchProfile,
+    createProfile,
+    deleteProfile,
     setError,
     refresh,
     importTracks,
-    addYouTubeLink,
+    addRemoteLink,
     importDroppedFiles,
     removeTrack,
     openMusicFolder,
@@ -859,14 +1109,15 @@ export function useAudioLibrary() {
     seek,
     setVolume,
     toggleFavorite,
-    youtubeSeekRequest,
-    onYoutubeTime,
-    onYoutubeDuration,
-    onYoutubePlaying,
-    onYoutubeEnded,
-    onYoutubeError,
+    favoritesOnly,
+    setFavoritesOnly: setFavoritesQueue,
+    remoteSeekRequest,
+    onRemoteTime,
+    onRemoteDuration,
+    onRemotePlaying,
+    onRemoteEnded,
+    onRemoteError,
     resetSession,
-    cycleMode,
     updateTimerSettings,
     setTimerSettingsOpen,
   };

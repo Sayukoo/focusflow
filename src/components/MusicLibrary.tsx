@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import type { Track } from "../types";
 import { Icon } from "./Icon";
 import { KaTeXTooltip } from "./KaTeXTooltip";
@@ -6,7 +6,11 @@ import { KaTeXTooltip } from "./KaTeXTooltip";
 interface MusicLibraryProps {
   open: boolean;
   tracks: Track[];
+  activeProfileName: string;
+  currentTrackCategory: string | null;
   currentTrackId: string | null;
+  favoriteTrackIds: string[];
+  favoritesOnly: boolean;
   musicDir: string;
   busy: boolean;
   onClose: () => void;
@@ -17,12 +21,20 @@ interface MusicLibraryProps {
   onOpenFolder: () => void;
   onSelect: (trackId: string) => void;
   onRemove: (track: Track) => void;
+  onToggleFavorite: (trackId: string) => void;
+  onSetFavoritesOnly: (enabled: boolean) => void;
 }
+
+type LibraryTab = "featured" | "genres" | "favorites" | "recent";
 
 export function MusicLibrary({
   open,
   tracks,
+  activeProfileName,
+  currentTrackCategory,
   currentTrackId,
+  favoriteTrackIds,
+  favoritesOnly,
   musicDir,
   busy,
   onClose,
@@ -33,13 +45,51 @@ export function MusicLibrary({
   onOpenFolder,
   onSelect,
   onRemove,
+  onToggleFavorite,
+  onSetFavoritesOnly,
 }: MusicLibraryProps) {
   const [dragActive, setDragActive] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
+  const [activeTab, setActiveTab] = useState<LibraryTab>(
+    favoritesOnly ? "favorites" : "featured",
+  );
+  const [expandedTrackId, setExpandedTrackId] = useState<string | null>(
+    currentTrackId,
+  );
+
+  useEffect(() => {
+    if (favoritesOnly) setActiveTab("favorites");
+  }, [favoritesOnly]);
+
+  useEffect(() => {
+    setActiveTab("featured");
+  }, [activeProfileName]);
+
+  useEffect(() => {
+    setExpandedTrackId(currentTrackId);
+  }, [currentTrackId]);
+
   if (!open) return null;
 
   const escapedDir = musicDir.replace(/\\/g, "\\\\");
+  const visibleTracks =
+    activeTab === "favorites"
+      ? tracks.filter((track) => favoriteTrackIds.includes(track.id))
+      : activeTab === "genres"
+        ? [...tracks].sort((a, b) =>
+            `${a.category ?? ""}${a.title}`.localeCompare(
+              `${b.category ?? ""}${b.title}`,
+            ),
+          )
+        : activeTab === "recent"
+          ? [...tracks].reverse()
+          : tracks;
+
+  const selectTab = (tab: LibraryTab) => {
+    setActiveTab(tab);
+    onSetFavoritesOnly(tab === "favorites");
+  };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -66,8 +116,8 @@ export function MusicLibrary({
               <Icon name="folder-open" size={22} />
             </span>
             <div>
-              <strong className="library-title">Music folder</strong>
-              <span className="library-breadcrumb">FocusFlow / music</span>
+              <strong className="library-title">{activeProfileName}</strong>
+              <span className="library-breadcrumb">FocusFlow / profile music</span>
             </div>
           </div>
 
@@ -83,11 +133,11 @@ export function MusicLibrary({
                 <Icon name="plus" size={19} />
               </button>
             </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Add a YouTube link}">
+            <KaTeXTooltip formula="\text{Add a streaming link}">
               <button
                 type="button"
                 className={linkOpen ? "icon-btn is-active" : "icon-btn"}
-                aria-label="Add YouTube link"
+                aria-label="Add YouTube, Spotify, SoundCloud or TikTok link"
                 disabled={busy}
                 onClick={() => setLinkOpen((value) => !value)}
               >
@@ -161,14 +211,14 @@ export function MusicLibrary({
           >
             <div className="link-import-heading">
               <Icon name="link" size={16} />
-              <span>Add YouTube link</span>
+              <span>Add streaming link</span>
             </div>
             <div className="link-import-controls">
               <input
                 type="url"
                 value={linkValue}
-                placeholder="https://youtube.com/watch?v=..."
-                aria-label="YouTube link"
+                placeholder="YouTube · Spotify · SoundCloud · TikTok URL"
+                aria-label="YouTube, Spotify, SoundCloud or TikTok link"
                 onChange={(event) => setLinkValue(event.target.value)}
               />
               <button type="submit" disabled={busy || !linkValue.trim()}>
@@ -178,32 +228,75 @@ export function MusicLibrary({
           </form>
         ) : null}
 
-        <div className="library-toolbar">
-          <span className="library-toolbar-title">Files</span>
-          <span className="library-toolbar-count">{tracks.length} items</span>
+        <div className="library-tabs" role="tablist" aria-label="Music library views">
+          {(
+            [
+              ["featured", "Wyróżniony"],
+              ["genres", "Gatunki"],
+              ["favorites", "Ulubione"],
+              ["recent", "Ostatni"],
+            ] as const
+          ).map(([tab, label]) => (
+            <button
+              type="button"
+              role="tab"
+              key={tab}
+              aria-selected={activeTab === tab}
+              className={activeTab === tab ? "is-active" : undefined}
+              onClick={() => selectTab(tab)}
+            >
+              {tab === "favorites" ? <Icon name="heart" size={13} /> : null}
+              {label}
+            </button>
+          ))}
         </div>
 
-        {tracks.length === 0 ? (
+        <div className="library-toolbar">
+          <h2 className="library-section-title">
+            {activeTab === "favorites" ? "Moje Ulubione" : activeProfileName}
+          </h2>
+          <span className="library-toolbar-count">{visibleTracks.length} items</span>
+        </div>
+
+        {visibleTracks.length === 0 ? (
           <div className="library-empty library-empty--manager">
             <Icon name="music" size={28} />
-            <span>Your folder is empty</span>
+            <span>
+              {activeTab === "favorites"
+                ? "No favorite tracks"
+                : "Your profile is empty"}
+            </span>
           </div>
         ) : (
           <div className="library-grid">
-            {tracks.map((track) => {
+            {visibleTracks.map((track) => {
               const active = track.id === currentTrackId;
+              const expanded = track.id === expandedTrackId;
+              const favorite = favoriteTrackIds.includes(track.id);
               return (
                 <article
                   key={track.id}
-                  className={active ? "track-card is-active" : "track-card"}
+                  className={[
+                    "track-card",
+                    active ? "is-active" : "",
+                    expanded ? "is-expanded" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 >
-                  <KaTeXTooltip formula={`\\text{Play }${escapeTex(track.title)}`}>
+                  <KaTeXTooltip
+                    placement="top"
+                    formula="\text{Play}"
+                  >
                     <button
                       type="button"
                       className="track-card-main"
                       aria-label={`Play ${track.title}`}
                       aria-current={active ? "true" : undefined}
-                      onClick={() => onSelect(track.id)}
+                      onClick={() => {
+                        setExpandedTrackId(track.id);
+                        onSelect(track.id);
+                      }}
                     >
                       <span
                         className="track-card-art"
@@ -225,11 +318,66 @@ export function MusicLibrary({
                       <span className="track-card-meta">
                         {track.source === "youtube"
                           ? `${track.author ?? "YouTube"} · link`
-                          : `${track.extension.toUpperCase()} · local file`}
+                          : track.source === "spotify"
+                            ? `${track.author ?? "Spotify"} · ${track.providerKind ?? "link"}`
+                            : track.source === "soundcloud"
+                              ? `${track.author ?? "SoundCloud"} · link`
+                              : track.source === "tiktok"
+                                ? `${track.author ?? "TikTok"} · link`
+                                : `${track.extension.toUpperCase()} · local file`}
                       </span>
                     </button>
                   </KaTeXTooltip>
+                  {expanded ? (
+                    <div className="track-card-details">
+                      <div className="track-detail-grid">
+                        <div>
+                          <span>KATEGORIA</span>
+                          <strong>
+                            {track.category ??
+                              (active ? currentTrackCategory : null) ??
+                              "AI pending"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>ŹRÓDŁO</span>
+                          <strong>
+                            {track.source
+                              ? `${track.source} stream`
+                              : `${track.extension.toUpperCase()} local`}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>AUTOR</span>
+                          <strong>{track.author ?? "FocusFlow library"}</strong>
+                        </div>
+                        <div>
+                          <span>AKTYWNOŚĆ</span>
+                          <strong>{activeProfileName}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <KaTeXTooltip
+                    placement="left"
+                    formula={favorite ? "\\text{Remove favorite}" : "\\text{Add favorite}"}
+                  >
+                    <button
+                      type="button"
+                      className={
+                        favorite
+                          ? "track-card-favorite is-favorite"
+                          : "track-card-favorite"
+                      }
+                      aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
+                      aria-pressed={favorite}
+                      onClick={() => onToggleFavorite(track.id)}
+                    >
+                      <Icon name="heart" size={14} />
+                    </button>
+                  </KaTeXTooltip>
+                  <KaTeXTooltip
+                    placement="left"
                     formula={`\\text{Remove }\\texttt{${escapeTex(track.filename)}}`}
                   >
                     <button
