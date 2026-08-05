@@ -152,6 +152,17 @@ export function removeTracksFromProfile(
   return next;
 }
 
+export function isTrackSharedWithAnotherProfile(
+  store: ProfileStore,
+  profileId: string,
+  trackId: string,
+): boolean {
+  return Object.entries(store.trackIdsByProfile).some(
+    ([candidateProfileId, trackIds]) =>
+      candidateProfileId !== profileId && trackIds.includes(trackId),
+  );
+}
+
 export function setActiveProfile(
   store: ProfileStore,
   profileId: string,

@@ -4,6 +4,7 @@ import type {
   TimerSettings,
   Track,
 } from "../types";
+import { getIntervalPhase } from "./timer";
 
 const REMOTE_LIBRARY_KEY = "focusflow.remote-library";
 const LEGACY_YOUTUBE_LIBRARY_KEY = "focusflow.youtube-library";
@@ -33,6 +34,11 @@ export function formatTimerLabel(
 ): string {
   if (settings.kind === "infinite" || settings.durationMinutes === null) {
     return formatClock(elapsedSeconds);
+  }
+
+  if (settings.kind === "intervals") {
+    const phase = getIntervalPhase(elapsedSeconds * 1000, settings);
+    return formatClock(Math.ceil(phase.phaseRemainingMs / 1000));
   }
 
   const remaining = Math.max(0, settings.durationMinutes * 60 - elapsedSeconds);

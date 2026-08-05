@@ -4,12 +4,14 @@ import {
   formatClock,
   formatRemaining,
   formatTimerLabel,
+  loadPlayerSnapshot,
   loadFavoriteTrackIds,
   nextTrackIndex,
   parseRemoteLink,
   parseYouTubeVideoId,
   previousTrackIndex,
   sanitizeTitle,
+  savePlayerSnapshot,
   saveFavoriteTrackIds,
   uniqueFilename,
 } from "./audio";
@@ -41,6 +43,10 @@ describe("formatTimerLabel", () => {
         kind: "infinite",
         durationMinutes: null,
         pauseWhenMusicPaused: true,
+        workDurationMinutes: 25,
+        breakDurationMinutes: 5,
+        goal: "",
+        miniGoals: [],
       }),
     ).toBe("2:05");
   });
@@ -51,8 +57,28 @@ describe("formatTimerLabel", () => {
         kind: "timer",
         durationMinutes: 60,
         pauseWhenMusicPaused: true,
+        workDurationMinutes: 25,
+        breakDurationMinutes: 5,
+        goal: "",
+        miniGoals: [],
       }),
     ).toBe("59:00");
+  });
+
+  it("shows the active interval phase countdown", () => {
+    const settings = {
+      kind: "intervals" as const,
+      durationMinutes: 25,
+      pauseWhenMusicPaused: true,
+      workDurationMinutes: 25,
+      breakDurationMinutes: 5,
+      goal: "",
+      miniGoals: [],
+    };
+
+    expect(formatTimerLabel(60, settings)).toBe("24:00");
+    expect(formatTimerLabel(25 * 60, settings)).toBe("5:00");
+    expect(formatTimerLabel(30 * 60, settings)).toBe("25:00");
   });
 });
 
@@ -166,5 +192,35 @@ describe("favorite persistence", () => {
     expect(loadFavoriteTrackIds()).toEqual(["one"]);
     localStorage.setItem("focusflow.favorites", "{broken");
     expect(loadFavoriteTrackIds()).toEqual([]);
+  });
+});
+
+describe("timer snapshot persistence", () => {
+  it("round-trips editable mini-goal progress", () => {
+    const timerSettings = {
+      kind: "timer" as const,
+      durationMinutes: 25,
+      pauseWhenMusicPaused: true,
+      workDurationMinutes: 25,
+      breakDurationMinutes: 5,
+      goal: "Finish the outline",
+      miniGoals: [
+        {
+          id: "mini-goal-1",
+          text: "Review the document",
+          completed: true,
+        },
+      ],
+    };
+
+    savePlayerSnapshot({
+      currentTrackId: null,
+      volume: 0.72,
+      mode: "deep",
+      durationPreset: 25,
+      timerSettings,
+    });
+
+    expect(loadPlayerSnapshot().timerSettings).toEqual(timerSettings);
   });
 });

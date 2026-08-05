@@ -1,9 +1,18 @@
+import { useEffect } from "react";
 import { FocusPlayer } from "./components/FocusPlayer";
 import { useAudioLibrary } from "./hooks/useAudioLibrary";
+import { ensureWindowsAutostart } from "./lib/autostart";
 import "./styles.css";
 
 function App() {
   const player = useAudioLibrary();
+
+  useEffect(() => {
+    void ensureWindowsAutostart().catch(() => {
+      // Autostart is optional; a policy-restricted Windows profile must not
+      // prevent the player from opening.
+    });
+  }, []);
 
   if (!player.ready) {
     return (
@@ -29,12 +38,14 @@ function App() {
       progress={player.progress}
       duration={player.duration}
       timerLabel={player.timerLabel}
+      timerPhase={player.timerPhase}
       mode={player.mode}
       timerSettings={player.timerSettings}
       timerSettingsOpen={player.timerSettingsOpen}
       libraryOpen={player.libraryOpen}
       busy={player.busy}
       error={player.error}
+      browserMode={player.browserMode}
       onToggleLibrary={player.setLibraryOpen}
       onToggleProfilePicker={player.setProfilePickerOpen}
       onSelectProfile={(profileId) => void player.switchProfile(profileId)}

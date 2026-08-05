@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { memo, useState, type FormEvent } from "react";
 import type { MusicProfile } from "../lib/profiles";
 import { Icon } from "./Icon";
 import { KaTeXTooltip } from "./KaTeXTooltip";
@@ -13,7 +13,7 @@ interface ProfilePickerProps {
   onDelete: (profileId: string) => void | Promise<void>;
 }
 
-export function ProfilePicker({
+export const ProfilePicker = memo(function ProfilePicker({
   open,
   profiles,
   activeProfileId,
@@ -113,7 +113,18 @@ export function ProfilePicker({
       </form>
     </div>
   );
-}
+}, (previous, next) => {
+  if (previous.open !== next.open) return false;
+  if (!previous.open) return true;
+  return (
+    previous.profiles === next.profiles &&
+    previous.activeProfileId === next.activeProfileId &&
+    previous.onClose === next.onClose &&
+    previous.onSelect === next.onSelect &&
+    previous.onCreate === next.onCreate &&
+    previous.onDelete === next.onDelete
+  );
+});
 
 function escapeTex(value: string): string {
   return value.replace(/([\\{}$&#^_~%])/g, "\\$1");

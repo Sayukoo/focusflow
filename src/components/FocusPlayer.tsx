@@ -1,10 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import { formatClock, isRemoteTrack } from "../lib/audio";
-import { categorizeTrack } from "../lib/gemini";
+import {
+  categorizeTrackWithStatus,
+  getTrackCategory,
+  type TrackCategory,
+  type TrackCategoryStatus,
+} from "../lib/gemini";
 import type { MusicProfile } from "../lib/profiles";
-import type { FocusMode, TimerSettings, Track } from "../types";
+import type {
+  FocusMode,
+  MiniGoal,
+  TimerPhase,
+  TimerSettings,
+  Track,
+} from "../types";
 import { Icon } from "./Icon";
 import { KaTeXTooltip } from "./KaTeXTooltip";
+import { MiniGoalChecklist } from "./MiniGoalChecklist";
 import { MusicLibrary } from "./MusicLibrary";
 import { ProfilePicker } from "./ProfilePicker";
 import { TimerSettings as TimerSettingsModal } from "./TimerSettings";
@@ -25,12 +38,14 @@ interface FocusPlayerProps {
   progress: number;
   duration: number;
   timerLabel: string;
+  timerPhase: TimerPhase | null;
   mode: FocusMode;
   timerSettings: TimerSettings;
   timerSettingsOpen: boolean;
   libraryOpen: boolean;
   busy: boolean;
   error: string | null;
+  browserMode: boolean;
   onToggleLibrary: (open: boolean) => void;
   onToggleProfilePicker: (open: boolean) => void;
   onSelectProfile: (profileId: string) => void | Promise<void>;
@@ -78,12 +93,14 @@ export function FocusPlayer(props: FocusPlayerProps) {
     progress,
     duration,
     timerLabel,
+    timerPhase,
     mode,
     timerSettings,
     timerSettingsOpen,
     libraryOpen,
     busy,
     error,
+    browserMode,
     onToggleLibrary,
     onToggleProfilePicker,
     onSelectProfile,
@@ -115,33 +132,167 @@ export function FocusPlayer(props: FocusPlayerProps) {
     onClearError,
   } = props;
 
-  const durationText =
+  const durationSummary =
     timerSettings.kind === "infinite"
-      ? "\\infty"
-      : `${timerSettings.durationMinutes ?? 60}\\text{m}`;
-  const [trackCategory, setTrackCategory] = useState<string | null>(
-    currentTrack?.category ?? null,
+      ? "Infinite"
+      : timerSettings.kind === "intervals"
+        ? `${timerSettings.workDurationMinutes} / ${timerSettings.breakDurationMinutes} min`
+        : `${timerSettings.durationMinutes ?? 60} min`;
+  const [trackCategory, setTrackCategory] = useState<TrackCategory | null>(() =>
+    currentTrack ? getTrackCategory(currentTrack) : null,
   );
   const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryStatus, setCategoryStatus] =
+    useState<TrackCategoryStatus>("available");
+  const categoryRequestIdRef = useRef(0);
+  const categoryRequestTrackIdRef = useRef<string | null>(null);
+  const categoryAbortRef = useRef<AbortController | null>(null);
+  const visibleTrackIdRef = useRef<string | null>(currentTrack?.id ?? null);
+  visibleTrackIdRef.current = currentTrack?.id ?? null;
   const [favoriteBursting, setFavoriteBursting] = useState(false);
   const favoriteBurstTimerRef = useRef<number | null>(null);
+  const shouldReduceMotion = useReducedMotion() ?? false;
+  const thumbnailUrl = currentTrack?.thumbnail ?? null;
+  const thumbnailUrlRef = useRef(thumbnailUrl);
+  const thumbnailTransitionTimerRef = useRef<number | null>(null);
+  const [thumbnailLayers, setThumbnailLayers] = useState<{
+    current: string | null;
+    previous: string | null;
+  }>({ current: thumbnailUrl, previous: null });
+  const [thumbnailTransitioning, setThumbnailTransitioning] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    setTrackCategory(currentTrack?.category ?? null);
-    setCategoryLoading(Boolean(currentTrack));
-    if (!currentTrack) return () => undefined;
+    if (thumbnailUrlRef.current === thumbnailUrl) return;
+    const previous = thumbnailUrlRef.current;
+    thumbnailUrlRef.current = thumbnailUrl;
+    if (thumbnailTransitionTimerRef.current !== null) {
+      window.clearTimeout(thumbnailTransitionTimerRef.current);
+    }
 
-    void categorizeTrack(currentTrack).then((category) => {
-      if (!active) return;
-      setTrackCategory(category);
-      setCategoryLoading(false);
-    });
+    if (shouldReduceMotion) {
+      setThumbnailLayers({ current: thumbnailUrl, previous: null });
+      setThumbnailTransitioning(false);
+      return;
+    }
+
+    setThumbnailLayers({ current: thumbnailUrl, previous });
+    setThumbnailTransitioning(true);
+    thumbnailTransitionTimerRef.current = window.setTimeout(() => {
+      thumbnailTransitionTimerRef.current = null;
+      setThumbnailTransitioning(false);
+      setThumbnailLayers((layers) => ({ current: layers.current, previous: null }));
+    }, 460);
 
     return () => {
-      active = false;
+      if (thumbnailTransitionTimerRef.current !== null) {
+        window.clearTimeout(thumbnailTransitionTimerRef.current);
+        thumbnailTransitionTimerRef.current = null;
+      }
     };
-  }, [currentTrack?.id]);
+  }, [shouldReduceMotion, thumbnailUrl]);
+
+  useEffect(
+    () => () => {
+      if (thumbnailTransitionTimerRef.current !== null) {
+        window.clearTimeout(thumbnailTransitionTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const previousThumbnailStyle = useMemo(
+    () =>
+      thumbnailLayers.previous
+        ? { backgroundImage: `url("${thumbnailLayers.previous}")` }
+        : undefined,
+    [thumbnailLayers.previous],
+  );
+  const currentThumbnailStyle = useMemo(
+    () =>
+      thumbnailLayers.current
+        ? { backgroundImage: `url("${thumbnailLayers.current}")` }
+        : undefined,
+    [thumbnailLayers.current],
+  );
+  const coverStyle = useMemo(
+    () =>
+      thumbnailUrl
+        ? {
+            backgroundImage: `linear-gradient(135deg, rgba(13, 22, 42, 0.2), rgba(20, 8, 30, 0.52)), url("${thumbnailUrl}")`,
+          }
+        : undefined,
+    [thumbnailUrl],
+  );
+
+  const requestCategory = useCallback(async (track: Track) => {
+    if (
+      categoryAbortRef.current &&
+      categoryRequestTrackIdRef.current === track.id
+    ) {
+      return;
+    }
+
+    categoryRequestIdRef.current += 1;
+    const requestId = categoryRequestIdRef.current;
+    categoryAbortRef.current?.abort();
+    const controller = new AbortController();
+    categoryAbortRef.current = controller;
+    categoryRequestTrackIdRef.current = track.id;
+    setCategoryLoading(true);
+    setCategoryStatus("available");
+
+    try {
+      const result = await categorizeTrackWithStatus(track, controller.signal);
+      if (
+        requestId !== categoryRequestIdRef.current ||
+        visibleTrackIdRef.current !== track.id
+      ) {
+        return;
+      }
+      setTrackCategory(result.category);
+      setCategoryStatus(result.status);
+    } catch {
+      if (
+        requestId === categoryRequestIdRef.current &&
+        visibleTrackIdRef.current === track.id
+      ) {
+        setTrackCategory(null);
+        setCategoryStatus("request-failed");
+      }
+    } finally {
+      if (requestId === categoryRequestIdRef.current) {
+        categoryAbortRef.current = null;
+        categoryRequestTrackIdRef.current = null;
+        setCategoryLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    categoryRequestIdRef.current += 1;
+    categoryAbortRef.current?.abort();
+    categoryAbortRef.current = null;
+    categoryRequestTrackIdRef.current = null;
+
+    const knownCategory = currentTrack ? getTrackCategory(currentTrack) : null;
+    setTrackCategory(knownCategory);
+    if (!currentTrack || knownCategory) {
+      setCategoryLoading(false);
+      setCategoryStatus(knownCategory ? "available" : "available");
+      return;
+    }
+
+    setCategoryLoading(true);
+    void requestCategory(currentTrack);
+  }, [currentTrack?.id, requestCategory]);
+
+  useEffect(
+    () => () => {
+      categoryRequestIdRef.current += 1;
+      categoryAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(
     () => () => {
@@ -153,8 +304,33 @@ export function FocusPlayer(props: FocusPlayerProps) {
   );
 
   const categoryLabel = categoryLoading
-    ? "AI..."
-    : trackCategory ?? "GROOVE";
+    ? "Classifying…"
+    : trackCategory ??
+      (categoryStatus === "missing-configuration"
+        ? "AI setup"
+        : categoryStatus === "request-failed"
+          ? "Retry AI"
+          : currentTrack
+            ? "Categorize"
+            : "No track");
+  const categoryNeedsAction = Boolean(currentTrack && !trackCategory);
+  const categoryActionLabel =
+    categoryStatus === "missing-configuration"
+      ? "Set up Gemini to categorize this track"
+      : categoryStatus === "request-failed"
+        ? "Retry AI category"
+        : categoryLoading
+          ? "Classifying track"
+          : "Categorize track with Gemini";
+  const categoryTooltip = trackCategory
+    ? `\\text{AI music category:}~\\text{${escapeTex(categoryLabel)}}`
+    : categoryStatus === "missing-configuration"
+      ? "\\text{Gemini setup required: configure the local API key}"
+      : categoryStatus === "request-failed"
+        ? "\\text{Gemini request failed: click to retry}"
+        : categoryLoading
+          ? "\\text{Classifying this track with Gemini}"
+          : "\\text{Classify this track with Gemini}";
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   const profileLabel = activeProfile?.name ?? "Deep Work";
   const sourceLabel =
@@ -168,14 +344,39 @@ export function FocusPlayer(props: FocusPlayerProps) {
             ? "TikTok stream"
             : "Local Neural Effect";
 
+  const handleMiniGoalsChange = useCallback(
+    (miniGoals: MiniGoal[]) => {
+      onTimerSettingsChange({
+        ...timerSettings,
+        miniGoals,
+      });
+    },
+    [onTimerSettingsChange, timerSettings],
+  );
+
   return (
-    <div className={`focus-shell mode-${mode}`}>
+    <div className={`focus-shell mode-${mode}${browserMode ? " is-browser" : ""}`}>
       <div className="focus-atmosphere" aria-hidden="true" />
-      {currentTrack?.thumbnail ? (
+      {thumbnailLayers.previous ? (
         <div
-          className="focus-thumbnail-atmosphere"
+          className={
+            thumbnailTransitioning
+              ? "focus-thumbnail-atmosphere focus-thumbnail-atmosphere--previous is-fading"
+              : "focus-thumbnail-atmosphere focus-thumbnail-atmosphere--previous"
+          }
           aria-hidden="true"
-          style={{ backgroundImage: `url("${currentTrack.thumbnail}")` }}
+          style={previousThumbnailStyle}
+        />
+      ) : null}
+      {thumbnailLayers.current ? (
+        <div
+          className={
+            thumbnailTransitioning
+              ? "focus-thumbnail-atmosphere focus-thumbnail-atmosphere--current is-entering"
+              : "focus-thumbnail-atmosphere focus-thumbnail-atmosphere--current"
+          }
+          aria-hidden="true"
+          style={currentThumbnailStyle}
         />
       ) : null}
       <div className="focus-vignette" aria-hidden="true" />
@@ -219,6 +420,9 @@ export function FocusPlayer(props: FocusPlayerProps) {
               type="button"
               className="icon-btn ghost"
               aria-label="Timer settings"
+              aria-haspopup="dialog"
+              aria-controls="timer-settings-dialog"
+              aria-expanded={timerSettingsOpen}
               onClick={onOpenTimerSettings}
             >
               <Icon name="stopwatch" />
@@ -259,40 +463,56 @@ export function FocusPlayer(props: FocusPlayerProps) {
       />
 
       <main className="focus-center">
-        <KaTeXTooltip formula="\text{IN FOCUS}">
-          <p className="focus-kicker">IN FOCUS</p>
-        </KaTeXTooltip>
+        <p className="focus-kicker">IN FOCUS</p>
 
-        <KaTeXTooltip
-          formula={
-            timerSettings.kind === "infinite"
-              ? `\\text{Elapsed }${timerLabel}`
-              : `\\text{Remaining }${timerLabel}`
-          }
+        {timerSettings.goal ? (
+          <p className="timer-goal">{timerSettings.goal}</p>
+        ) : null}
+
+        {timerPhase ? (
+          <span className="timer-phase-pill" aria-live="polite">
+            {timerPhase === "work" ? "Work" : "Break"}
+          </span>
+        ) : null}
+
+        <button
+          type="button"
+          className="timer-display"
+          aria-label={`Timer ${timerLabel}`}
+          aria-haspopup="dialog"
+          aria-controls="timer-settings-dialog"
+          aria-expanded={timerSettingsOpen}
+          onClick={onOpenTimerSettings}
         >
-          <button
-            type="button"
-            className="timer-display"
-            aria-label={`Timer ${timerLabel}`}
-            onClick={onOpenTimerSettings}
-          >
-            {timerLabel}
-          </button>
-        </KaTeXTooltip>
+          {timerLabel}
+        </button>
 
-          <KaTeXTooltip formula={`\\text{Duration:}~${durationText}`}>
-          <button
-            type="button"
-            className="duration-pill"
-            aria-label="Change duration"
-            onClick={onOpenTimerSettings}
-          >
-            {timerSettings.kind === "infinite"
-              ? "∞ Infinity"
-              : `${timerSettings.durationMinutes ?? 60} min`}
-            <Icon name="chevron-down" size={15} />
-          </button>
-        </KaTeXTooltip>
+        <button
+          type="button"
+          className="duration-pill"
+          aria-label={`Change timer settings (${durationSummary})`}
+          aria-haspopup="dialog"
+          aria-controls="timer-settings-dialog"
+          aria-expanded={timerSettingsOpen}
+          onClick={onOpenTimerSettings}
+        >
+          {durationSummary}
+          <Icon name="chevron-down" size={15} />
+        </button>
+
+        {timerSettings.miniGoals.length > 0 ? (
+          <section className="focus-mini-goals" aria-label="Mini goals">
+            <div className="focus-mini-goals-heading">
+              <Icon name="sparkles" size={14} />
+              <span>Mini goals</span>
+            </div>
+            <MiniGoalChecklist
+              items={timerSettings.miniGoals}
+              label="Mini goals"
+              onChange={handleMiniGoalsChange}
+            />
+          </section>
+        ) : null}
       </main>
 
       <footer className="focus-bottom">
@@ -308,13 +528,7 @@ export function FocusPlayer(props: FocusPlayerProps) {
               type="button"
               className="cover"
               aria-label={currentTrack?.title ?? "No track"}
-              style={
-                currentTrack?.thumbnail
-                  ? {
-                      backgroundImage: `linear-gradient(135deg, rgba(13, 22, 42, 0.2), rgba(20, 8, 30, 0.52)), url("${currentTrack.thumbnail}")`,
-                    }
-                  : undefined
-              }
+              style={coverStyle}
               onClick={() => onToggleLibrary(true)}
             >
               <span className="cover-glow" aria-hidden="true">
@@ -343,12 +557,29 @@ export function FocusPlayer(props: FocusPlayerProps) {
               <span className="now-sub">{sourceLabel}</span>
             </KaTeXTooltip>
             <div className="now-chips">
-              <KaTeXTooltip
-                formula={`\\text{AI music category:}~\\text{${escapeTex(categoryLabel)}}`}
-              >
-                <span className={categoryLoading ? "chip is-loading" : "chip"}>
-                  {categoryLabel}
-                </span>
+              <KaTeXTooltip formula={categoryTooltip}>
+                {categoryNeedsAction ? (
+                  <button
+                    type="button"
+                    className={[
+                      "chip",
+                      categoryLoading ? "is-loading" : "",
+                      categoryStatus === "request-failed" ? "is-error" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-label={categoryActionLabel}
+                    aria-busy={categoryLoading}
+                    disabled={categoryLoading}
+                    onClick={() => {
+                      if (currentTrack) void requestCategory(currentTrack);
+                    }}
+                  >
+                    {categoryLabel}
+                  </button>
+                ) : (
+                  <span className="chip">{categoryLabel}</span>
+                )}
               </KaTeXTooltip>
             </div>
           </div>
@@ -397,40 +628,63 @@ export function FocusPlayer(props: FocusPlayerProps) {
         </div>
 
         <div className="transport">
-          <KaTeXTooltip formula="\text{Repeat queue}">
-            <button type="button" className="repeat-btn" aria-label="Repeat queue">
-              <Icon name="repeat" size={19} />
-            </button>
-          </KaTeXTooltip>
-          <div className="transport-row">
-            <KaTeXTooltip formula="\text{Previous}">
+          <div className="transport-strip" role="group" aria-label="Playback controls">
+            <span className="transport-side-icon" aria-hidden="true">
+              <Icon name="shuffle" size={15} />
+            </span>
+            <div className="transport-row">
+              <KaTeXTooltip formula="\text{Previous}">
+                <button
+                  type="button"
+                  className="transport-btn transport-btn--previous"
+                  aria-label="Previous"
+                  onClick={onPrevious}
+                >
+                  <Icon name="previous" size={18} />
+                </button>
+              </KaTeXTooltip>
+              <KaTeXTooltip formula={isPlaying ? "\\text{Pause}" : "\\text{Play}"}>
+                <button
+                  type="button"
+                  className="play-btn"
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                  onClick={onTogglePlay}
+                >
+                  <Icon name={isPlaying ? "pause" : "play"} size={20} />
+                </button>
+              </KaTeXTooltip>
+              <KaTeXTooltip formula="\text{Next}">
+                <button
+                  type="button"
+                  className="transport-btn transport-btn--next"
+                  aria-label="Next"
+                  onClick={onNext}
+                >
+                  <Icon name="next" size={18} />
+                </button>
+              </KaTeXTooltip>
+            </div>
+            <KaTeXTooltip
+              formula={
+                favoritesOnly
+                  ? "\\text{Repeat favorites queue}"
+                  : "\\text{Repeat queue}"
+              }
+            >
               <button
                 type="button"
-                className="transport-btn transport-btn--previous"
-                aria-label="Previous"
-                onClick={onPrevious}
+                className={
+                  favoritesOnly
+                    ? "transport-side-btn repeat-btn is-active"
+                    : "transport-side-btn repeat-btn"
+                }
+                aria-label={
+                  favoritesOnly ? "Repeat favorites queue" : "Repeat queue"
+                }
+                aria-pressed={favoritesOnly}
+                onClick={() => onSetFavoritesOnly(!favoritesOnly)}
               >
-                <Icon name="previous" size={24} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula={isPlaying ? "\\text{Pause}" : "\\text{Play}"}>
-              <button
-                type="button"
-                className="play-btn"
-                aria-label={isPlaying ? "Pause" : "Play"}
-                onClick={onTogglePlay}
-              >
-                <Icon name={isPlaying ? "pause" : "play"} size={27} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Next}">
-              <button
-                type="button"
-                className="transport-btn transport-btn--next"
-                aria-label="Next"
-                onClick={onNext}
-              >
-                <Icon name="next" size={24} />
+                <Icon name="repeat" size={15} />
               </button>
             </KaTeXTooltip>
           </div>

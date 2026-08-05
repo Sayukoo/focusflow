@@ -6,6 +6,7 @@ import {
   deleteCustomProfile,
   getProfileFavoriteIds,
   getProfileTrackIds,
+  isTrackSharedWithAnotherProfile,
   loadProfileStore,
   reconcileProfileTracks,
   saveProfileStore,
@@ -78,6 +79,32 @@ describe("profile storage", () => {
     expect(getProfileFavoriteIds(withFavorite, writing!.id)).toEqual(["track-1"]);
     expect(getProfileTrackIds(deepWork)).toEqual([]);
     expect(getProfileFavoriteIds(deepWork)).toEqual([]);
+  });
+
+  it("detects tracks shared with another profile", () => {
+    const custom = addCustomProfile(
+      createDefaultProfileStore(),
+      "Writing",
+    ).store;
+    const writing = custom.profiles.find((profile) => profile.name === "Writing");
+    const withDeepWorkTrack = assignTracksToProfile(custom, "deep-work", [
+      "track-1",
+    ]);
+    const shared = assignTracksToProfile(
+      withDeepWorkTrack,
+      writing!.id,
+      ["track-1"],
+    );
+
+    expect(isTrackSharedWithAnotherProfile(shared, "deep-work", "track-1")).toBe(
+      true,
+    );
+    expect(isTrackSharedWithAnotherProfile(shared, writing!.id, "track-1")).toBe(
+      true,
+    );
+    expect(isTrackSharedWithAnotherProfile(shared, "deep-work", "track-2")).toBe(
+      false,
+    );
   });
 
   it("returns to Deep Work when an active custom profile is deleted", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { memo, useEffect, useState, type DragEvent } from "react";
 import type { Track } from "../types";
 import { Icon } from "./Icon";
 import { KaTeXTooltip } from "./KaTeXTooltip";
@@ -27,7 +27,7 @@ interface MusicLibraryProps {
 
 type LibraryTab = "featured" | "genres" | "favorites" | "recent";
 
-export function MusicLibrary({
+export const MusicLibrary = memo(function MusicLibrary({
   open,
   tracks,
   activeProfileName,
@@ -378,14 +378,17 @@ export function MusicLibrary({
                   </KaTeXTooltip>
                   <KaTeXTooltip
                     placement="left"
-                    formula={`\\text{Remove }\\texttt{${escapeTex(track.filename)}}`}
+                    formula={`\\text{Delete from profile:}~\\texttt{${escapeTex(track.filename)}}`}
                   >
                     <button
                       type="button"
                       className="track-card-delete"
-                      aria-label={`Remove ${track.title}`}
+                      aria-label={`Delete ${track.title} from ${activeProfileName}`}
                       disabled={busy}
-                      onClick={() => onRemove(track)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemove(track);
+                      }}
                     >
                       <Icon name="trash" size={15} />
                     </button>
@@ -398,7 +401,30 @@ export function MusicLibrary({
       </aside>
     </div>
   );
-}
+}, (previous, next) => {
+  if (previous.open !== next.open) return false;
+  if (!previous.open) return true;
+  return (
+    previous.tracks === next.tracks &&
+    previous.activeProfileName === next.activeProfileName &&
+    previous.currentTrackCategory === next.currentTrackCategory &&
+    previous.currentTrackId === next.currentTrackId &&
+    previous.favoriteTrackIds === next.favoriteTrackIds &&
+    previous.favoritesOnly === next.favoritesOnly &&
+    previous.musicDir === next.musicDir &&
+    previous.busy === next.busy &&
+    previous.onClose === next.onClose &&
+    previous.onImport === next.onImport &&
+    previous.onAddLink === next.onAddLink &&
+    previous.onDropFiles === next.onDropFiles &&
+    previous.onRefresh === next.onRefresh &&
+    previous.onOpenFolder === next.onOpenFolder &&
+    previous.onSelect === next.onSelect &&
+    previous.onRemove === next.onRemove &&
+    previous.onToggleFavorite === next.onToggleFavorite &&
+    previous.onSetFavoritesOnly === next.onSetFavoritesOnly
+  );
+});
 
 function escapeTex(value: string): string {
   return value.replace(/([\\{}$&#^_~%])/g, "\\$1");

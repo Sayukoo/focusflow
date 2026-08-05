@@ -20,9 +20,22 @@ import {
   uniqueFilename,
 } from "../lib/audio";
 import {
+  createTimerClock,
+  elapsedSecondsFromMs,
+  getIntervalPhase,
+  normalizeTimerSettings,
+  pauseTimerClock,
+  readTimerElapsedMs,
+  resetMiniGoalProgress,
+  resetTimerClock,
+  startTimerClock,
+  timerLimitMs,
+  type TimerClock,
+} from "../lib/timer";
+import {
   DEFAULT_TIMER_SETTINGS,
   type FocusMode,
-  type TimerKind,
+  type TimerPhase,
   type TimerSettings,
   type Track,
 } from "../types";
@@ -32,6 +45,7 @@ import {
   deleteCustomProfile,
   getProfileFavoriteIds,
   getProfileTrackIds,
+  isTrackSharedWithAnotherProfile,
   loadProfileStore,
   reconcileProfileTracks,
   removeTracksFromProfile,
@@ -66,7 +80,10 @@ export function useAudioLibrary() {
     getProfileFavoriteIds(profileStore),
   );
   const timerSettingsRef = useRef<TimerSettings>(DEFAULT_TIMER_SETTINGS);
+  const timerClockRef = useRef<TimerClock>(createTimerClock());
+  const sessionStartedRef = useRef(false);
   const loadRequestRef = useRef(0);
+  const profileSwitchRequestRef = useRef(0);
   const lastRenderedProgressRef = useRef(0);
 
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -97,7 +114,18 @@ export function useAudioLibrary() {
   const [ready, setReady] = useState(false);
   const runningInTauri = useMemo(() => isTauriRuntime(), []);
 
+  const setPlayingState = useCallback((playing: boolean) => {
+    playingRef.current = playing;
+    setIsPlaying(playing);
+  }, []);
+
+  const setSessionActive = useCallback((active: boolean) => {
+    sessionStartedRef.current = active;
+    setSessionStarted(active);
+  }, []);
+
   const commitProfileStore = useCallback((next: ProfileStore) => {
+    if (profileStoresEqual(profileStoreRef.current, next)) return;
     profileStoreRef.current = next;
     activeProfileIdRef.current = next.activeProfileId;
     setProfileStore(next);
@@ -176,16 +204,15 @@ export function useAudioLibrary() {
       audio.removeAttribute("src");
       audio.load();
       playingRef.current = autoplay;
-      setIsPlaying(false);
+      setPlayingState(false);
       if (autoplay) {
-        setIsPlaying(true);
-        setSessionStarted(true);
+        setPlayingState(true);
+        setSessionActive(true);
       }
       return;
     }
 
-    playingRef.current = false;
-    setIsPlaying(false);
+    setPlayingState(false);
     audio.src =
       runningInTauri && track.source !== "browser"
         ? convertFileSrc(track.path)
@@ -196,12 +223,12 @@ export function useAudioLibrary() {
       try {
         if (requestId !== loadRequestRef.current) return;
         await audio.play();
-        setSessionStarted(true);
+        setSessionActive(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     }
-  }, [runningInTauri]);
+  }, [runningInTauri, setPlayingState, setSessionActive]);
 
   const refresh = useCallback(async () => {
     if (!runningInTauri) {
@@ -259,8 +286,8 @@ export function useAudioLibrary() {
       }
     };
     const onMeta = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPlay = () => setPlayingState(true);
+    const onPause = () => setPlayingState(false);
     const onEnded = () => {
       const list = getPlaybackTracks();
       const index = findTrackIndex(list, currentIdRef.current);
@@ -268,7 +295,7 @@ export function useAudioLibrary() {
       if (next >= 0) {
         void loadTrack(list[next], true);
       } else {
-        setIsPlaying(false);
+        setPlayingState(false);
         setProgress(0);
       }
     };
@@ -285,19 +312,25 @@ export function useAudioLibrary() {
       setVolumeState(nextVolume);
       audio.volume = nextVolume;
     }
-    if (isTimerSettings(snapshot.timerSettings)) {
-      setTimerSettings(snapshot.timerSettings);
+    if (snapshot.timerSettings !== undefined) {
+      const restoredSettings = normalizeTimerSettings(snapshot.timerSettings);
+      timerSettingsRef.current = restoredSettings;
+      setTimerSettings(restoredSettings);
     } else if (snapshot.durationPreset === "infinity") {
-      setTimerSettings({
+      const restoredSettings = normalizeTimerSettings({
         ...DEFAULT_TIMER_SETTINGS,
         kind: "infinite",
         durationMinutes: null,
       });
+      timerSettingsRef.current = restoredSettings;
+      setTimerSettings(restoredSettings);
     } else if (typeof snapshot.durationPreset === "number") {
-      setTimerSettings({
+      const restoredSettings = normalizeTimerSettings({
         ...DEFAULT_TIMER_SETTINGS,
         durationMinutes: snapshot.durationPreset,
       });
+      timerSettingsRef.current = restoredSettings;
+      setTimerSettings(restoredSettings);
     }
 
     (async () => {
@@ -329,7 +362,13 @@ export function useAudioLibrary() {
       audio.removeEventListener("ended", onEnded);
       audioRef.current = null;
     };
-  }, [getPlaybackTracks, loadTrack, refresh, runningInTauri]);
+  }, [
+    getPlaybackTracks,
+    loadTrack,
+    refresh,
+    runningInTauri,
+    setPlayingState,
+  ]);
 
   useEffect(() => {
     if (!ready) return;
@@ -342,8 +381,12 @@ export function useAudioLibrary() {
           ? "infinity"
           : timerSettings.durationMinutes === 15 ||
               timerSettings.durationMinutes === 25 ||
+              timerSettings.durationMinutes === 30 ||
+              timerSettings.durationMinutes === 40 ||
               timerSettings.durationMinutes === 45 ||
-              timerSettings.durationMinutes === 60
+              timerSettings.durationMinutes === 50 ||
+              timerSettings.durationMinutes === 60 ||
+              timerSettings.durationMinutes === 120
             ? timerSettings.durationMinutes
             : 60,
       timerSettings,
@@ -357,28 +400,62 @@ export function useAudioLibrary() {
     }
   }, [volume]);
 
-  useEffect(() => {
+  const syncTimerClock = useCallback(() => {
+    const nowMs = Date.now();
     const shouldAdvance =
-      sessionStarted && (!timerSettings.pauseWhenMusicPaused || isPlaying);
-    if (!shouldAdvance) return;
+      sessionStartedRef.current &&
+      (!timerSettingsRef.current.pauseWhenMusicPaused || playingRef.current);
 
-    const timer = window.setInterval(() => {
-      setElapsed((value) => {
-        if (
-          timerSettings.kind !== "infinite" &&
-          timerSettings.durationMinutes !== null &&
-          value + 1 >= timerSettings.durationMinutes * 60
-        ) {
-          audioRef.current?.pause();
-          setIsPlaying(false);
-          setSessionStarted(false);
-          return timerSettings.durationMinutes * 60;
-        }
-        return value + 1;
-      });
-    }, 1000);
+    if (shouldAdvance) {
+      startTimerClock(timerClockRef.current, nowMs);
+    } else {
+      pauseTimerClock(timerClockRef.current, nowMs);
+    }
+  }, []);
+
+  useEffect(() => {
+    sessionStartedRef.current = sessionStarted;
+  }, [sessionStarted]);
+
+  useEffect(() => {
+    syncTimerClock();
+  }, [isPlaying, sessionStarted, syncTimerClock, timerSettings]);
+
+  useEffect(() => {
+    const tick = () => {
+      const nowMs = Date.now();
+      const settings = timerSettingsRef.current;
+      const shouldAdvance =
+        sessionStartedRef.current &&
+        (!settings.pauseWhenMusicPaused || playingRef.current);
+
+      if (!shouldAdvance) {
+        pauseTimerClock(timerClockRef.current, nowMs);
+        return;
+      }
+
+      startTimerClock(timerClockRef.current, nowMs);
+      const elapsedMs = readTimerElapsedMs(timerClockRef.current, nowMs);
+      const limitMs = timerLimitMs(settings);
+
+      if (limitMs !== null && elapsedMs >= limitMs) {
+        timerClockRef.current.elapsedMs = limitMs;
+        timerClockRef.current.startedAtMs = null;
+        setElapsed(elapsedSecondsFromMs(limitMs));
+        audioRef.current?.pause();
+        setPlayingState(false);
+        setSessionActive(false);
+        return;
+      }
+
+      const nextElapsed = elapsedSecondsFromMs(elapsedMs);
+      setElapsed((value) => (value === nextElapsed ? value : nextElapsed));
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 500);
     return () => window.clearInterval(timer);
-  }, [isPlaying, sessionStarted, timerSettings]);
+  }, [setPlayingState, setSessionActive]);
 
   const selectTrack = useCallback(
     async (trackId: string, autoplay = false) => {
@@ -414,42 +491,49 @@ export function useAudioLibrary() {
 
     if (isRemoteTrack(activeTrack)) {
       if (playingRef.current) {
-        playingRef.current = false;
-        setIsPlaying(false);
+        setPlayingState(false);
         return;
       }
 
       if (
-        timerSettings.kind !== "infinite" &&
+        timerSettings.kind === "timer" &&
         timerSettings.durationMinutes !== null &&
         elapsed >= timerSettings.durationMinutes * 60
       ) {
+        resetTimerClock(timerClockRef.current);
         setElapsed(0);
       }
-      playingRef.current = true;
-      setIsPlaying(true);
-      setSessionStarted(true);
+      setPlayingState(true);
+      setSessionActive(true);
       return;
     }
 
     if (audio.paused) {
       try {
         if (
-          timerSettings.kind !== "infinite" &&
+          timerSettings.kind === "timer" &&
           timerSettings.durationMinutes !== null &&
           elapsed >= timerSettings.durationMinutes * 60
         ) {
+          resetTimerClock(timerClockRef.current);
           setElapsed(0);
         }
         await audio.play();
-        setSessionStarted(true);
+        setSessionActive(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     } else {
       audio.pause();
     }
-  }, [elapsed, getPlaybackTracks, loadTrack, timerSettings]);
+  }, [
+    elapsed,
+    getPlaybackTracks,
+    loadTrack,
+    setPlayingState,
+    setSessionActive,
+    timerSettings,
+  ]);
 
   const playNext = useCallback(async (forceAutoplay = false) => {
     const list = getPlaybackTracks();
@@ -483,10 +567,9 @@ export function useAudioLibrary() {
   }, []);
 
   const onRemotePlaying = useCallback((playing: boolean) => {
-    playingRef.current = playing;
-    setIsPlaying(playing);
-    if (playing) setSessionStarted(true);
-  }, []);
+    setPlayingState(playing);
+    if (playing) setSessionActive(true);
+  }, [setPlayingState, setSessionActive]);
 
   const onRemoteEnded = useCallback(() => {
     void playNext(true);
@@ -494,9 +577,8 @@ export function useAudioLibrary() {
 
   const onRemoteError = useCallback((message: string) => {
     setError(message);
-    playingRef.current = false;
-    setIsPlaying(false);
-  }, []);
+    setPlayingState(false);
+  }, [setPlayingState]);
 
   const playPrevious = useCallback(async () => {
     const audio = audioRef.current;
@@ -570,8 +652,8 @@ export function useAudioLibrary() {
     );
     if (!firstFavorite) {
       audioRef.current?.pause();
-      setIsPlaying(false);
-      setSessionStarted(false);
+      setPlayingState(false);
+      setSessionActive(false);
       setError("Favorite a track to build this queue.");
       return;
     }
@@ -582,7 +664,7 @@ export function useAudioLibrary() {
     if (!current || !favoriteTrackIdsRef.current.includes(current.id)) {
       void loadTrack(firstFavorite, playingRef.current);
     }
-  }, [loadTrack]);
+  }, [loadTrack, setPlayingState, setSessionActive]);
 
   const pickBrowserFiles = useCallback((directory = false) => {
     return new Promise<File[]>((resolve) => {
@@ -855,54 +937,69 @@ export function useAudioLibrary() {
     async (track: Track) => {
       setBusy(true);
       setError(null);
+      const wasCurrent = track.id === currentIdRef.current;
+      const profileId = activeProfileIdRef.current;
+      let storageChanged = false;
+      let membershipChanged = false;
+
+      const detachCurrent = () => {
+        if (!wasCurrent) return;
+        audioRef.current?.pause();
+        setPlayingState(false);
+        setSessionActive(false);
+        audioRef.current?.removeAttribute("src");
+        audioRef.current?.load();
+      };
+
+      const selectReplacement = async () => {
+        if (!wasCurrent) return;
+        const nextTrack = getPlaybackTracks()[0];
+        if (nextTrack) {
+          await loadTrack(nextTrack, false);
+          return;
+        }
+
+        currentIdRef.current = null;
+        setCurrentTrackId(null);
+        audioRef.current?.removeAttribute("src");
+        audioRef.current?.load();
+        setProgress(0);
+        setDuration(0);
+        lastRenderedProgressRef.current = 0;
+      };
+
       try {
-        const wasCurrent = track.id === currentIdRef.current;
+        // Release the active media source before deleting a file. Windows can
+        // otherwise keep the file locked while the Tauri command runs.
+        detachCurrent();
+
         const profileAfterRemoval = removeTracksFromProfile(
           profileStoreRef.current,
-          activeProfileIdRef.current,
+          profileId,
           [track.id],
         );
-        const sharedWithAnotherProfile = Object.entries(
-          profileAfterRemoval.trackIdsByProfile,
-        ).some(
-          ([profileId, ids]) =>
-            profileId !== activeProfileIdRef.current && ids.includes(track.id),
+        const removeFromStorage = !isTrackSharedWithAnotherProfile(
+          profileAfterRemoval,
+          profileId,
+          track.id,
         );
-        const removeFromStorage = !sharedWithAnotherProfile;
-        const clearCurrent = async () => {
-          if (!wasCurrent) return;
-          audioRef.current?.pause();
-          playingRef.current = false;
-          setIsPlaying(false);
-          setSessionStarted(false);
-          const nextTrack = getPlaybackTracks()[0];
-          if (nextTrack) {
-            await loadTrack(nextTrack, false);
-          } else {
-            currentIdRef.current = null;
-            setCurrentTrackId(null);
-            if (!isRemoteTrack(track)) {
-              audioRef.current?.removeAttribute("src");
-            }
-            setProgress(0);
-            setDuration(0);
-          }
-        };
+        const nextProfileStore = removeFromStorage
+          ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
+          : profileAfterRemoval;
 
         if (isRemoteTrack(track)) {
           if (removeFromStorage) {
-            remoteTracksRef.current = remoteTracksRef.current.filter(
+            const nextRemoteTracks = remoteTracksRef.current.filter(
               (item) => item.id !== track.id,
             );
-            saveRemoteTracks(remoteTracksRef.current);
+            saveRemoteTracks(nextRemoteTracks);
+            remoteTracksRef.current = nextRemoteTracks;
+            storageChanged = true;
           }
-          commitProfileStore(
-            removeFromStorage
-              ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
-              : profileAfterRemoval,
-          );
+          commitProfileStore(nextProfileStore);
+          membershipChanged = true;
           await refresh();
-          await clearCurrent();
+          await selectReplacement();
           return;
         }
 
@@ -913,35 +1010,43 @@ export function useAudioLibrary() {
           if (removeFromStorage) URL.revokeObjectURL(track.path);
           const listed = [...browserListed, ...remoteTracksRef.current];
           browserTracksRef.current = browserListed;
-          commitProfileStore(
-            removeFromStorage
-              ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
-              : profileAfterRemoval,
-          );
+          storageChanged = removeFromStorage;
+          commitProfileStore(nextProfileStore);
+          membershipChanged = true;
           const visible = filterTracksForProfile(listed);
           tracksRef.current = visible;
           setTracks(visible);
-          await clearCurrent();
+          await selectReplacement();
           return;
         }
 
         if (removeFromStorage) {
           await invoke("delete_track", { path: track.path });
+          storageChanged = true;
         }
-        commitProfileStore(
-          removeFromStorage
-            ? removeTracksFromProfiles(profileAfterRemoval, [track.id])
-            : profileAfterRemoval,
-        );
+        commitProfileStore(nextProfileStore);
+        membershipChanged = true;
         await refresh();
-        await clearCurrent();
+        await selectReplacement();
       } catch (err) {
+        if (wasCurrent && !storageChanged && !membershipChanged) {
+          await loadTrack(track, false).catch(() => undefined);
+        }
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(false);
       }
     },
-    [commitProfileStore, filterTracksForProfile, loadTrack, refresh, runningInTauri],
+    [
+      commitProfileStore,
+      filterTracksForProfile,
+      getPlaybackTracks,
+      loadTrack,
+      refresh,
+      runningInTauri,
+      setPlayingState,
+      setSessionActive,
+    ],
   );
 
   const openMusicFolder = useCallback(async () => {
@@ -974,30 +1079,45 @@ export function useAudioLibrary() {
         return;
       }
 
+      const requestId = profileSwitchRequestRef.current + 1;
+      profileSwitchRequestRef.current = requestId;
+      const previousTrackId = currentIdRef.current;
+      setBusy(true);
+      setError(null);
       audioRef.current?.pause();
-      playingRef.current = false;
-      currentIdRef.current = null;
-      setCurrentTrackId(null);
-      setIsPlaying(false);
-      setSessionStarted(false);
-      setProgress(0);
-      setDuration(0);
-      audioRef.current?.removeAttribute("src");
-      audioRef.current?.load();
+      setPlayingState(false);
+      setSessionActive(false);
       favoritesOnlyRef.current = false;
       setFavoritesOnlyState(false);
       setProfilePickerOpen(false);
 
-      commitProfileStore(
-        setActiveProfile(profileStoreRef.current, profile.id),
-      );
-      setMode(profile.theme);
-      const listed = await refresh();
-      if (listed[0]) {
-        await loadTrack(listed[0], false);
+      try {
+        commitProfileStore(
+          setActiveProfile(profileStoreRef.current, profile.id),
+        );
+        const listed = await refresh();
+        if (requestId !== profileSwitchRequestRef.current) return;
+
+        if (previousTrackId && listed.some((track) => track.id === previousTrackId)) {
+          return;
+        }
+
+        currentIdRef.current = null;
+        setCurrentTrackId(null);
+        setProgress(0);
+        setDuration(0);
+        audioRef.current?.removeAttribute("src");
+      } catch (err) {
+        if (requestId === profileSwitchRequestRef.current) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (requestId === profileSwitchRequestRef.current) {
+          setBusy(false);
+        }
       }
     },
-    [commitProfileStore, loadTrack, refresh],
+    [commitProfileStore, refresh, setPlayingState, setSessionActive],
   );
 
   const createProfile = useCallback(
@@ -1029,40 +1149,50 @@ export function useAudioLibrary() {
   );
 
   const resetSession = useCallback(() => {
+    resetTimerClock(timerClockRef.current);
     setElapsed(0);
-    setSessionStarted(false);
-  }, []);
+    setSessionActive(false);
+    const settings = timerSettingsRef.current;
+    if (settings.miniGoals.some((miniGoal) => miniGoal.completed)) {
+      const resetSettings = {
+        ...settings,
+        miniGoals: resetMiniGoalProgress(settings.miniGoals),
+      };
+      timerSettingsRef.current = resetSettings;
+      setTimerSettings(resetSettings);
+    }
+  }, [setSessionActive]);
 
   const updateTimerSettings = useCallback((next: TimerSettings) => {
-    const durationMinutes =
-      next.kind === "infinite"
-        ? null
-        : Math.min(
-            24 * 60,
-            Math.max(
-              1,
-              Math.round(
-                next.durationMinutes ??
-                  (next.kind === "intervals" ? 25 : DEFAULT_TIMER_SETTINGS.durationMinutes!),
-              ),
-            ),
-          );
-
-    const normalized = { ...next, durationMinutes };
+    const normalized = normalizeTimerSettings(next);
     const previous = timerSettingsRef.current;
-    timerSettingsRef.current = normalized;
-    setTimerSettings(normalized);
-
-    if (
+    const timerDefinitionChanged =
       previous.kind !== normalized.kind ||
-      previous.durationMinutes !== normalized.durationMinutes
-    ) {
+      previous.durationMinutes !== normalized.durationMinutes ||
+      previous.workDurationMinutes !== normalized.workDurationMinutes ||
+      previous.breakDurationMinutes !== normalized.breakDurationMinutes;
+    const nextSettings =
+      timerDefinitionChanged || previous.goal !== normalized.goal
+        ? {
+            ...normalized,
+            miniGoals: resetMiniGoalProgress(normalized.miniGoals),
+          }
+        : normalized;
+    timerSettingsRef.current = nextSettings;
+    setTimerSettings(nextSettings);
+
+    if (timerDefinitionChanged) {
+      resetTimerClock(timerClockRef.current);
       setElapsed(0);
-      setSessionStarted((started) => started || playingRef.current);
+      setSessionActive(sessionStartedRef.current || playingRef.current);
     }
-  }, []);
+  }, [setSessionActive]);
 
   const timerLabel = formatTimerLabel(elapsed, timerSettings);
+  const timerPhase: TimerPhase | null =
+    timerSettings.kind === "intervals"
+      ? getIntervalPhase(elapsed * 1000, timerSettings).phase
+      : null;
 
   useEffect(() => {
     document.title = `${timerLabel} · FocusFlow`;
@@ -1083,6 +1213,7 @@ export function useAudioLibrary() {
     duration,
     elapsed,
     timerLabel,
+    timerPhase,
     mode,
     timerSettings,
     timerSettingsOpen,
@@ -1090,6 +1221,7 @@ export function useAudioLibrary() {
     busy,
     error,
     ready,
+    browserMode: !runningInTauri,
     setLibraryOpen,
     setProfilePickerOpen,
     switchProfile,
@@ -1123,23 +1255,50 @@ export function useAudioLibrary() {
   };
 }
 
-function isTimerSettings(value: unknown): value is TimerSettings {
-  if (!value || typeof value !== "object") return false;
+function profileStoresEqual(left: ProfileStore, right: ProfileStore): boolean {
+  if (
+    left.activeProfileId !== right.activeProfileId ||
+    left.migrationComplete !== right.migrationComplete ||
+    left.profiles.length !== right.profiles.length
+  ) {
+    return false;
+  }
 
-  const candidate = value as Partial<TimerSettings>;
-  const validKind: TimerKind =
-    candidate.kind === "infinite" ||
-    candidate.kind === "timer" ||
-    candidate.kind === "intervals"
-      ? candidate.kind
-      : "timer";
+  for (let index = 0; index < left.profiles.length; index += 1) {
+    const a = left.profiles[index];
+    const b = right.profiles[index];
+    if (
+      a.id !== b.id ||
+      a.name !== b.name ||
+      a.kind !== b.kind ||
+      a.theme !== b.theme
+    ) {
+      return false;
+    }
+  }
 
-  return (
-    validKind === candidate.kind &&
-    typeof candidate.pauseWhenMusicPaused === "boolean" &&
-    (candidate.durationMinutes === null ||
-      (typeof candidate.durationMinutes === "number" &&
-        Number.isFinite(candidate.durationMinutes) &&
-        candidate.durationMinutes > 0))
-  );
+  return profileMapsEqual(left.trackIdsByProfile, right.trackIdsByProfile)
+    && profileMapsEqual(
+      left.favoriteIdsByProfile,
+      right.favoriteIdsByProfile,
+    );
+}
+
+function profileMapsEqual(
+  left: Record<string, string[]>,
+  right: Record<string, string[]>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+
+  return leftKeys.every((key) => {
+    if (!(key in right)) return false;
+    const leftValues = left[key] ?? [];
+    const rightValues = right[key] ?? [];
+    return (
+      leftValues.length === rightValues.length &&
+      leftValues.every((value, index) => value === rightValues[index])
+    );
+  });
 }

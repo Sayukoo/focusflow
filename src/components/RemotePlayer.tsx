@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Track } from "../types";
 import { SoundCloudPlayer } from "./SoundCloudPlayer";
 import { SpotifyPlayer } from "./SpotifyPlayer";
@@ -16,7 +17,10 @@ export interface RemotePlayerProps {
   onError: (message: string) => void;
 }
 
-export function RemotePlayer({ track, ...props }: RemotePlayerProps) {
+export const RemotePlayer = memo(function RemotePlayer({
+  track,
+  ...props
+}: RemotePlayerProps) {
   if (!track || !track.source) return null;
 
   if (track.source === "youtube") {
@@ -36,4 +40,4 @@ export function RemotePlayer({ track, ...props }: RemotePlayerProps) {
   }
 
   return null;
-}
+});

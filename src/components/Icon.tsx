@@ -23,6 +23,7 @@ export type IconName =
   | "refresh"
   | "repeat"
   | "share"
+  | "shuffle"
   | "sparkles"
   | "stopwatch"
   | "thumbs-down"
@@ -161,6 +162,15 @@ const iconPaths: Record<IconName, ReactElement> = {
       <path d="M4 7h13a3 3 0 0 1 3 3" />
       <path d="m7 20.2-3-3.2 3-3.2" />
       <path d="M20 17H7a3 3 0 0 1-3-3" />
+    </>
+  ),
+  shuffle: (
+    <>
+      <path d="M4 7h2c1.5 0 2.4.6 3.4 2l5.2 6.9c.9 1.2 1.8 2 3.4 2H20" />
+      <path d="m17 15 3 3-3 3" />
+      <path d="M4 18h2c1.5 0 2.4-.6 3.4-2l1.3-1.7" />
+      <path d="m14.6 9.7 1.4-1.7c.9-1.2 1.8-2 3.4-2H20" />
+      <path d="m17 3 3 3-3 3" />
     </>
   ),
   share: (

@@ -65,7 +65,7 @@ export function TikTokPlayer({
     const iframe = document.createElement("iframe");
     iframe.title = "TikTok player";
     iframe.allow = "autoplay";
-    iframe.loading = "eager";
+    iframe.loading = "lazy";
     iframe.frameBorder = "0";
     iframe.width = "100%";
     iframe.height = "100%";

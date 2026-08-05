@@ -183,11 +183,20 @@ fn open_music_dir(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        tauri_plugin_autostart::Builder::new()
+            .app_name("FocusFlow")
+            .build(),
+    );
+
+    builder
         .invoke_handler(tauri::generate_handler![
             ensure_music_dir,
             get_music_dir,
