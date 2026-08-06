@@ -16,20 +16,20 @@ import {
   type TimerKind,
   type TimerSettings as TimerSettingsState,
   type TimerUnit,
-} from "../types";
+} from "../../types";
 import {
   generateMiniGoalsDetailed,
   hasGeminiConfiguration,
-} from "../lib/gemini";
+} from "../../lib/gemini";
 import {
   createMiniGoals,
   normalizeGoal,
   normalizeTimerSettings,
-} from "../lib/timer";
-import type { MiniGoal } from "../types";
-import { Icon } from "./Icon";
-import { KaTeXTooltip } from "./KaTeXTooltip";
-import { MiniGoalChecklist } from "./MiniGoalChecklist";
+} from "../../lib/timer";
+import type { MiniGoal } from "../../types";
+import { Icon } from "../ui/Icon";
+import { KaTeXTooltip } from "../ui/KaTeXTooltip";
+import { MiniGoalChecklist } from "../tasks/MiniGoalChecklist";
 
 interface TimerSettingsProps {
   open: boolean;
@@ -222,6 +222,7 @@ export const TimerSettings = memo(function TimerSettings({
             settings.kind === "intervals"
               ? settings.breakDurationMinutes
               : null,
+          userAboutMe: settings.userAboutMe,
         },
         controller.signal,
         answer,
@@ -245,13 +246,17 @@ export const TimerSettings = memo(function TimerSettings({
         );
         return;
       }
+      const finalGoal = generated.improvedGoal || goal;
+      if (generated.improvedGoal) {
+        setGoalDraft(generated.improvedGoal);
+      }
       const generatedMiniGoals = createMiniGoals(generated.miniGoals);
       setClarificationQuestion("");
       setClarificationAnswer("");
       setMiniGoals(generatedMiniGoals);
       setDraftSettings((current) => ({
         ...current,
-        goal,
+        goal: finalGoal,
         miniGoals: generatedMiniGoals,
       }));
     } catch {
@@ -273,11 +278,10 @@ export const TimerSettings = memo(function TimerSettings({
   const commitFiniteSettings = (next: TimerSettingsState): void => {
     setClarificationQuestion("");
     setClarificationAnswer("");
-    setMiniGoals([]);
     setDraftSettings({
       ...next,
-      goal: normalizeGoal(goalDraft),
-      miniGoals: [],
+      goal: normalizeGoal(goalDraft) || next.goal,
+      miniGoals,
     });
   };
 
@@ -289,8 +293,7 @@ export const TimerSettings = memo(function TimerSettings({
     }
     const goal = requireGoal();
     if (!goal) return;
-    setMiniGoals([]);
-    setDraftSettings({ ...settings, goal, miniGoals: [] });
+    setDraftSettings({ ...settings, goal, miniGoals });
   };
 
   const handleDraftMiniGoalsChange = (next: MiniGoal[]) => {
@@ -342,7 +345,7 @@ export const TimerSettings = memo(function TimerSettings({
       const workDurationMinutes =
         settings.kind === "intervals"
           ? settings.workDurationMinutes
-          : 25;
+          : settings.durationMinutes ?? 25;
       const breakDurationMinutes =
         settings.kind === "intervals"
           ? settings.breakDurationMinutes
@@ -466,10 +469,7 @@ export const TimerSettings = memo(function TimerSettings({
             layout={!shouldReduceMotion}
           >
             <div className="timer-settings-atmosphere" aria-hidden="true" />
-            <header className="timer-settings-header">
-              <span id="timer-settings-title" className="timer-settings-title">
-                Timer Settings
-              </span>
+            <div className="timer-settings-close-wrap">
               <KaTeXTooltip formula="\text{Close timer settings}">
                 <button
                   ref={closeButtonRef}
@@ -481,42 +481,28 @@ export const TimerSettings = memo(function TimerSettings({
                   <Icon name="close" />
                 </button>
               </KaTeXTooltip>
+            </div>
+            <header className="timer-settings-header">
+              <span id="timer-settings-title" className="timer-settings-title">
+                Timer Settings
+              </span>
             </header>
 
             <motion.div
               className="timer-settings-body"
               layout={!shouldReduceMotion}
             >
-              <label className="timer-toggle-row">
-                <span>Pause on music pause</span>
-                <input
-                  type="checkbox"
-                  checked={settings.pauseWhenMusicPaused}
-                  aria-label="Pause timer when music is paused"
-                  onChange={(event) =>
-                  setDraftSettings({
-                      ...settings,
-                      pauseWhenMusicPaused: event.target.checked,
-                    })
-                  }
-                />
-                <span className="switch-visual" aria-hidden="true">
-                  <span />
-                </span>
-              </label>
-
-              <motion.div
-                className="timer-tabs"
+              <div
+                className="timer-tabs timer-tabs--primary"
                 role="tablist"
                 aria-label="Timer type"
-                layout={!shouldReduceMotion ? "position" : false}
               >
                 <TimerTab
-                  active={settings.kind === "infinite"}
-                  icon="infinity"
-                  label="Infinite"
+                  active={settings.kind === "intervals"}
+                  icon="intervals"
+                  label="Intervals"
                   reducedMotion={shouldReduceMotion}
-                  onClick={() => chooseKind("infinite")}
+                  onClick={() => chooseKind("intervals")}
                 />
                 <TimerTab
                   active={settings.kind === "timer"}
@@ -526,13 +512,79 @@ export const TimerSettings = memo(function TimerSettings({
                   onClick={() => chooseKind("timer")}
                 />
                 <TimerTab
-                  active={settings.kind === "intervals"}
-                  icon="intervals"
-                  label="Intervals"
+                  active={settings.kind === "infinite"}
+                  icon="infinity"
+                  label="Infinite"
                   reducedMotion={shouldReduceMotion}
-                  onClick={() => chooseKind("intervals")}
+                  onClick={() => chooseKind("infinite")}
                 />
-              </motion.div>
+              </div>
+
+              <div
+                className="timer-settings-toggle-strip"
+                role="group"
+                aria-label="Timer cue settings"
+              >
+                <KaTeXTooltip formula="\text{Pause when music pauses}">
+                  <label className="timer-toggle-row">
+                    <span>Pause</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.pauseWhenMusicPaused}
+                      aria-label="Pause timer when music is paused"
+                      onChange={(event) =>
+                        setDraftSettings({
+                          ...settings,
+                          pauseWhenMusicPaused: event.target.checked,
+                        })
+                      }
+                    />
+                    <span className="switch-visual" aria-hidden="true">
+                      <span />
+                    </span>
+                  </label>
+                </KaTeXTooltip>
+
+                <KaTeXTooltip formula="\text{Play a soft sound on phase changes}">
+                  <label className="timer-toggle-row">
+                    <span>Sound</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.phaseSoundEnabled}
+                      aria-label="Play a soft sound on work and break transitions"
+                      onChange={(event) =>
+                        setDraftSettings({
+                          ...settings,
+                          phaseSoundEnabled: event.target.checked,
+                        })
+                      }
+                    />
+                    <span className="switch-visual" aria-hidden="true">
+                      <span />
+                    </span>
+                  </label>
+                </KaTeXTooltip>
+
+                <KaTeXTooltip formula="\text{Play the calm female voice pack}">
+                  <label className="timer-toggle-row">
+                    <span>Voice</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.phaseVoiceEnabled}
+                      aria-label="Speak Polish work and break announcements"
+                      onChange={(event) =>
+                        setDraftSettings({
+                          ...settings,
+                          phaseVoiceEnabled: event.target.checked,
+                        })
+                      }
+                    />
+                    <span className="switch-visual" aria-hidden="true">
+                      <span />
+                    </span>
+                  </label>
+                </KaTeXTooltip>
+              </div>
 
               <motion.div
                 className="timer-copy"
@@ -762,8 +814,6 @@ export const TimerSettings = memo(function TimerSettings({
                     required={settings.kind !== "infinite"}
                     onChange={(event) => {
                       const nextGoal = event.target.value;
-                      cancelMiniGoals();
-                      setMiniGoals([]);
                       setMiniGoalsError("");
                       setClarificationQuestion("");
                       setClarificationAnswer("");
@@ -771,9 +821,8 @@ export const TimerSettings = memo(function TimerSettings({
                       setDraftSettings((current) => ({
                         ...current,
                         goal: normalizeGoal(nextGoal),
-                        miniGoals: [],
                       }));
-                      if (normalizeGoal(nextGoal)) setGoalError("");
+                      if (nextGoal.trim()) setGoalError("");
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -845,6 +894,7 @@ export const TimerSettings = memo(function TimerSettings({
                   </div>
                 ) : null}
               </motion.div>
+
               <div className="timer-settings-actions">
                 <button
                   type="button"

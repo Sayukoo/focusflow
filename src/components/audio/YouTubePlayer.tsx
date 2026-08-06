@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Track } from "../types";
+import type { Track } from "../../types";
 
 interface YouTubePlayerProps {
   track: Track | null;
@@ -100,13 +100,19 @@ export function YouTubePlayer({
         window.clearTimeout(resumeTimerRef.current);
         resumeTimerRef.current = null;
       }
-      playerRef.current?.destroy();
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        // A third-party player can already have torn down its iframe.
+      }
       playerRef.current = null;
       return;
     }
 
     let disposed = false;
     const host = hostRef.current;
+    const playerMount = document.createElement("div");
+    playerMount.className = "youtube-player-target";
     let resumeAttempts = 0;
 
     const clearResumeTimer = () => {
@@ -143,15 +149,15 @@ export function YouTubePlayer({
       attempt();
     };
 
-    host.replaceChildren();
+    host.replaceChildren(playerMount);
     lastSeekTokenRef.current = null;
     clearResumeTimer();
 
     void loadYouTubeApi()
       .then((api) => {
-        if (disposed || !hostRef.current) return;
+        if (disposed || !hostRef.current || !playerMount.isConnected) return;
 
-        playerRef.current = new api.Player(hostRef.current, {
+        playerRef.current = new api.Player(playerMount, {
           height: "1",
           width: "1",
           videoId: track.videoId!,
@@ -167,8 +173,14 @@ export function YouTubePlayer({
           events: {
             onReady: (event) => {
               resumeAttempts = 0;
-              event.target.setVolume(playbackRef.current.volume * 100);
-              callbacksRef.current.onDuration(event.target.getDuration() || 0);
+              if (typeof event.target.setVolume === "function") {
+                event.target.setVolume(playbackRef.current.volume * 100);
+              }
+              const duration =
+                typeof event.target.getDuration === "function"
+                  ? event.target.getDuration()
+                  : 0;
+              callbacksRef.current.onDuration(duration || 0);
               if (playbackRef.current.playing) resumeIfIntended(event.target);
             },
             onStateChange: (event) => {
@@ -212,28 +224,42 @@ export function YouTubePlayer({
     return () => {
       disposed = true;
       clearResumeTimer();
-      playerRef.current?.destroy();
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        // A third-party player can already have torn down its iframe.
+      }
       playerRef.current = null;
+      host.replaceChildren();
     };
   }, [track?.videoId]);
 
   useEffect(() => {
     const player = playerRef.current;
-    if (!player) return;
+    if (!player || typeof player.playVideo !== "function") return;
     if (playing) {
       player.playVideo();
-    } else {
+    } else if (typeof player.pauseVideo === "function") {
       player.pauseVideo();
     }
   }, [playing]);
 
   useEffect(() => {
-    playerRef.current?.setVolume(volume * 100);
+    if (typeof playerRef.current?.setVolume === "function") {
+      playerRef.current.setVolume(volume * 100);
+    }
   }, [volume]);
 
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !seekRequest || seekRequest.token === lastSeekTokenRef.current) return;
+    if (
+      !player ||
+      typeof player.seekTo !== "function" ||
+      !seekRequest ||
+      seekRequest.token === lastSeekTokenRef.current
+    ) {
+      return;
+    }
     lastSeekTokenRef.current = seekRequest.token;
     player.seekTo(seekRequest.value, true);
   }, [seekRequest]);
@@ -243,7 +269,13 @@ export function YouTubePlayer({
 
     const timer = window.setInterval(() => {
       const player = playerRef.current;
-      if (!player) return;
+      if (
+        !player ||
+        typeof player.getCurrentTime !== "function" ||
+        typeof player.getDuration !== "function"
+      ) {
+        return;
+      }
       callbacksRef.current.onTime(player.getCurrentTime() || 0);
       callbacksRef.current.onDuration(player.getDuration() || 0);
     }, 350);

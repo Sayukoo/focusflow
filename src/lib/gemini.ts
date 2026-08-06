@@ -34,8 +34,13 @@ export class GeminiRequestError extends Error {
 }
 
 export type TrackCategoryStatus =
+  | "idle"
+  | "categorizing"
   | "available"
+  | "no-api-key"
+  | "invalid-api-key"
   | "missing-configuration"
+  | "rate-limited"
   | "request-failed"
   | "cancelled";
 
@@ -48,9 +53,11 @@ export interface MiniGoalContext {
   kind: "timer" | "intervals";
   workDurationMinutes: number;
   breakDurationMinutes: number | null;
+  userAboutMe?: string;
 }
 
 export interface MiniGoalGenerationResult {
+  improvedGoal?: string;
   miniGoals: string[];
   clarifyingQuestion?: string;
 }
@@ -106,9 +113,10 @@ export async function categorizeTrack(
 export async function categorizeTrackWithStatus(
   track: Track,
   externalSignal?: AbortSignal,
+  forceRequery = false,
 ): Promise<TrackCategoryResult> {
   const knownCategory = getTrackCategory(track);
-  if (knownCategory) {
+  if (knownCategory && !forceRequery) {
     return { category: knownCategory, status: "available" };
   }
 
@@ -299,6 +307,9 @@ export async function generateMiniGoalsDetailed(
           workDurationMinutes: 60,
           breakDurationMinutes: null,
         };
+  const cleanUserAboutMe = context.userAboutMe
+    ? context.userAboutMe.replace(/\s+/g, " ").trim().slice(0, 4000)
+    : "";
   const signal =
     contextOrSignal &&
     typeof AbortSignal !== "undefined" &&
@@ -315,13 +326,18 @@ export async function generateMiniGoalsDetailed(
   const model =
     import.meta.env.VITE_GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
   const prompt = [
-    "Turn the user's work goal into 3 to 5 very small, concrete, actionable mini-goals.",
+    "Turn the user's work goal into an improved, clean, actionable main goal title ('improvedGoal') and 3 to 5 small, concrete, actionable mini-goals ('miniGoals').",
     "Each mini-goal should be doable in a few minutes and start with a clear verb.",
+    "If the input goal is in Polish, write improvedGoal and miniGoals in Polish.",
+    "CRITICAL MANDATE FOR USER BACKGROUND / ABOUT ME:",
+    "- The 'User background / About me' field provides psychological context, personal persona, role nuances, anxieties, or preferences (e.g. if the user is a psychologist, has fear of social evaluation/judgment, struggles with perfectionism, etc.).",
+    "- This section is NOT a list of literal subtasks to copy/paste. It is psychological memory & context.",
+    "- You MUST use this background context to empathetically adapt, modify, and frame the main task ('improvedGoal') and subtasks ('miniGoals') into low-friction, comfortable, approachable steps that help the user overcome friction and actually accomplish the goal.",
     "If the goal is broad or ambiguous, ask exactly one concise clarifying question first.",
     "When asking a question, return an empty miniGoals array.",
     "When a clarification answer is present, use it and generate the smaller goals.",
-    "If the goal is clear, return JSON with actionable miniGoals and an empty clarifyingQuestion.",
-    "Return JSON only in the form {\"miniGoals\":[\"...\"],\"clarifyingQuestion\":\"...\"}.",
+    "If the goal is clear, return JSON with improvedGoal, actionable miniGoals, and an empty clarifyingQuestion.",
+    "Return JSON only in the form {\"improvedGoal\":\"...\",\"miniGoals\":[\"...\"],\"clarifyingQuestion\":\"...\"}.",
     "",
     `Selected work duration: ${context.workDurationMinutes} minutes`,
     `Selected break interval: ${
@@ -329,6 +345,7 @@ export async function generateMiniGoalsDetailed(
         ? `${context.breakDurationMinutes ?? 5} minutes`
         : "none"
     }`,
+    `User background / About me (psychological context & memory): ${cleanUserAboutMe || "none"}`,
     `Exact goal text: ${cleanGoal}`,
     `Clarification answer: ${cleanClarification || "none"}`,
   ].join("\n");
@@ -349,11 +366,12 @@ export async function generateMiniGoalsDetailed(
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 160,
+            maxOutputTokens: 280,
             responseMimeType: "application/json",
             responseSchema: {
               type: "OBJECT",
               properties: {
+                improvedGoal: { type: "STRING" },
                 miniGoals: {
                   type: "ARRAY",
                   items: { type: "STRING" },
@@ -382,9 +400,14 @@ export async function generateMiniGoalsDetailed(
     if (!text) return { miniGoals: [] };
 
     const parsed = JSON.parse(stripMarkdownFence(text)) as {
+      improvedGoal?: unknown;
       miniGoals?: unknown;
       clarifyingQuestion?: unknown;
     };
+    const improvedGoal =
+      typeof parsed.improvedGoal === "string" && parsed.improvedGoal.trim()
+        ? parsed.improvedGoal.trim().slice(0, 160)
+        : undefined;
     const miniGoals = normalizeMiniGoals(parsed.miniGoals);
     const clarifyingQuestion = normalizeClarifyingQuestion(
       parsed.clarifyingQuestion,
@@ -393,6 +416,7 @@ export async function generateMiniGoalsDetailed(
       throw new GeminiRequestError("Gemini returned no mini-goals.");
     }
     return {
+      improvedGoal,
       miniGoals,
       clarifyingQuestion:
         miniGoals.length > 0 ? undefined : clarifyingQuestion,

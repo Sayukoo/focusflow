@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { Track } from "../types";
+import type { Track } from "../../types";
 import { SoundCloudPlayer } from "./SoundCloudPlayer";
 import { SpotifyPlayer } from "./SpotifyPlayer";
 import { TikTokPlayer } from "./TikTokPlayer";

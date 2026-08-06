@@ -1,13 +1,14 @@
-import { memo, useEffect, useState, type DragEvent } from "react";
-import type { Track } from "../types";
-import { Icon } from "./Icon";
-import { KaTeXTooltip } from "./KaTeXTooltip";
+import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
+import { getTrackCategory, type TrackCategory } from "../../lib/gemini";
+import type { PlaybackQueue, Track } from "../../types";
+import { Icon } from "../ui/Icon";
+import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 
 interface MusicLibraryProps {
   open: boolean;
   tracks: Track[];
   activeProfileName: string;
-  currentTrackCategory: string | null;
+  currentTrackCategory: TrackCategory | null;
   currentTrackId: string | null;
   favoriteTrackIds: string[];
   favoritesOnly: boolean;
@@ -22,10 +23,11 @@ interface MusicLibraryProps {
   onSelect: (trackId: string) => void;
   onRemove: (track: Track) => void;
   onToggleFavorite: (trackId: string) => void;
-  onSetFavoritesOnly: (enabled: boolean) => void;
+  onPlayQueue: (queue: PlaybackQueue, trackId: string | null) => void;
 }
 
 type LibraryTab = "featured" | "genres" | "favorites" | "recent";
+type GenreFilter = TrackCategory | "all" | "uncategorized";
 
 export const MusicLibrary = memo(function MusicLibrary({
   open,
@@ -41,15 +43,13 @@ export const MusicLibrary = memo(function MusicLibrary({
   onImport,
   onAddLink,
   onDropFiles,
-  onRefresh,
   onOpenFolder,
   onSelect,
   onRemove,
   onToggleFavorite,
-  onSetFavoritesOnly,
+  onPlayQueue,
 }: MusicLibraryProps) {
   const [dragActive, setDragActive] = useState(false);
-  const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
   const [activeTab, setActiveTab] = useState<LibraryTab>(
     favoritesOnly ? "favorites" : "featured",
@@ -57,6 +57,7 @@ export const MusicLibrary = memo(function MusicLibrary({
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(
     currentTrackId,
   );
+  const [genreFilter, setGenreFilter] = useState<GenreFilter>("all");
 
   useEffect(() => {
     if (favoritesOnly) setActiveTab("favorites");
@@ -64,31 +65,105 @@ export const MusicLibrary = memo(function MusicLibrary({
 
   useEffect(() => {
     setActiveTab("featured");
+    setGenreFilter("all");
   }, [activeProfileName]);
 
   useEffect(() => {
     setExpandedTrackId(currentTrackId);
   }, [currentTrackId]);
 
+  const categoryByTrack = useMemo(() => {
+    return new Map(
+      tracks.map((track) => [
+        track.id,
+        getTrackCategory(track) ??
+          (track.id === currentTrackId ? currentTrackCategory : null),
+      ]),
+    );
+  }, [currentTrackCategory, currentTrackId, tracks]);
+
+  const genreOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          [...categoryByTrack.values()].filter(
+            (category): category is TrackCategory => Boolean(category),
+          ),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
+    [categoryByTrack],
+  );
+
+  const hasUncategorizedTracks = useMemo(
+    () => tracks.some((track) => !categoryByTrack.get(track.id)),
+    [categoryByTrack, tracks],
+  );
+
+  useEffect(() => {
+    if (activeTab !== "genres" || genreFilter === "all") return;
+    const filterStillAvailable =
+      genreFilter === "uncategorized"
+        ? hasUncategorizedTracks
+        : genreOptions.includes(genreFilter);
+    if (!filterStillAvailable) setGenreFilter("all");
+  }, [activeTab, genreFilter, genreOptions, hasUncategorizedTracks]);
+
   if (!open) return null;
 
   const escapedDir = musicDir.replace(/\\/g, "\\\\");
-  const visibleTracks =
+  const baseTracks =
     activeTab === "favorites"
       ? tracks.filter((track) => favoriteTrackIds.includes(track.id))
-      : activeTab === "genres"
-        ? [...tracks].sort((a, b) =>
-            `${a.category ?? ""}${a.title}`.localeCompare(
-              `${b.category ?? ""}${b.title}`,
-            ),
-          )
-        : activeTab === "recent"
-          ? [...tracks].reverse()
-          : tracks;
+      : tracks;
+  const visibleTracks =
+    activeTab === "genres"
+      ? baseTracks
+          .filter((track) => {
+            const category = categoryByTrack.get(track.id);
+            if (genreFilter === "all") return true;
+            if (genreFilter === "uncategorized") return !category;
+            return category === genreFilter;
+          })
+          .sort((a, b) => {
+            const categoryA = categoryByTrack.get(a.id) ?? "";
+            const categoryB = categoryByTrack.get(b.id) ?? "";
+            return `${categoryA}${a.title}`.localeCompare(`${categoryB}${b.title}`);
+          })
+      : activeTab === "recent"
+        ? [...baseTracks].reverse()
+        : baseTracks;
+  const selectedQueue: PlaybackQueue =
+    activeTab === "favorites"
+      ? { kind: "favorites" }
+      : activeTab === "recent"
+        ? { kind: "recent" }
+        : activeTab === "genres" && genreFilter !== "all"
+          ? {
+              kind: "genre",
+              category: genreFilter === "uncategorized" ? null : genreFilter,
+            }
+          : { kind: "all" };
+  const playQueueLabel =
+    activeTab === "favorites"
+      ? "Play favorites"
+      : activeTab === "recent"
+        ? "Play recent tracks"
+        : activeTab === "genres" && genreFilter !== "all"
+          ? `Play ${
+              genreFilter === "uncategorized"
+                ? "uncategorized"
+                : formatCategory(genreFilter)
+            } tracks`
+          : "Play profile tracks";
 
   const selectTab = (tab: LibraryTab) => {
     setActiveTab(tab);
-    onSetFavoritesOnly(tab === "favorites");
+    if (tab !== "genres") setGenreFilter("all");
+  };
+
+  const selectGenre = (category: TrackCategory) => {
+    setActiveTab("genres");
+    setGenreFilter(category);
   };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -104,6 +179,13 @@ export const MusicLibrary = memo(function MusicLibrary({
     if (!busy) {
       onDropFiles(Array.from(event.dataTransfer.files));
     }
+  };
+
+  const submitLink = (value: string) => {
+    const url = value.trim();
+    if (!url || busy) return;
+    onAddLink(url);
+    setLinkValue("");
   };
 
   return (
@@ -122,39 +204,6 @@ export const MusicLibrary = memo(function MusicLibrary({
           </div>
 
           <div className="library-actions">
-            <KaTeXTooltip formula="\text{Upload audio files}">
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Upload audio files"
-                disabled={busy}
-                onClick={onImport}
-              >
-                <Icon name="plus" size={19} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Add a streaming link}">
-              <button
-                type="button"
-                className={linkOpen ? "icon-btn is-active" : "icon-btn"}
-                aria-label="Add YouTube, Spotify, SoundCloud or TikTok link"
-                disabled={busy}
-                onClick={() => setLinkOpen((value) => !value)}
-              >
-                <Icon name="link" size={18} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Refresh folder}">
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Refresh folder"
-                disabled={busy}
-                onClick={onRefresh}
-              >
-                <Icon name="refresh" size={18} />
-              </button>
-            </KaTeXTooltip>
             <KaTeXTooltip formula={`\\text{Open in Explorer:}~\\texttt{${escapedDir}}`}>
               <button
                 type="button"
@@ -185,7 +234,27 @@ export const MusicLibrary = memo(function MusicLibrary({
             <Icon name="plus" size={12} />
           </span>
           <strong>{dragActive ? "Release to upload" : "Drop music here"}</strong>
-          <span className="dropzone-hint">or</span>
+          <input
+            className="dropzone-link-input"
+            type="url"
+            value={linkValue}
+            placeholder="Paste a music link"
+            aria-label="Paste a YouTube, Spotify, SoundCloud or TikTok link"
+            disabled={busy}
+            onChange={(event) => setLinkValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submitLink(event.currentTarget.value);
+              }
+            }}
+            onPaste={(event) => {
+              const pasted = event.clipboardData.getData("text");
+              if (!pasted.trim()) return;
+              event.preventDefault();
+              submitLink(pasted);
+            }}
+          />
           <button
             type="button"
             className="upload-button"
@@ -195,38 +264,7 @@ export const MusicLibrary = memo(function MusicLibrary({
             <Icon name="plus" size={16} />
             Upload files
           </button>
-          <small>MP3 · WAV · OGG · FLAC · M4A · AAC</small>
         </div>
-
-        {linkOpen ? (
-          <form
-            className="link-import-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!linkValue.trim() || busy) return;
-              onAddLink(linkValue);
-              setLinkValue("");
-              setLinkOpen(false);
-            }}
-          >
-            <div className="link-import-heading">
-              <Icon name="link" size={16} />
-              <span>Add streaming link</span>
-            </div>
-            <div className="link-import-controls">
-              <input
-                type="url"
-                value={linkValue}
-                placeholder="YouTube · Spotify · SoundCloud · TikTok URL"
-                aria-label="YouTube, Spotify, SoundCloud or TikTok link"
-                onChange={(event) => setLinkValue(event.target.value)}
-              />
-              <button type="submit" disabled={busy || !linkValue.trim()}>
-                Add
-              </button>
-            </div>
-          </form>
-        ) : null}
 
         <div className="library-tabs" role="tablist" aria-label="Music library views">
           {(
@@ -251,11 +289,86 @@ export const MusicLibrary = memo(function MusicLibrary({
           ))}
         </div>
 
+        {activeTab === "genres" ? (
+          <div className="library-genre-filters" role="listbox" aria-label="Genres">
+            <KaTeXTooltip formula="\text{All genres}">
+              <button
+                type="button"
+                role="option"
+                aria-label="All genres"
+                aria-selected={genreFilter === "all"}
+                className={genreFilter === "all" ? "is-active" : undefined}
+                onClick={() => setGenreFilter("all")}
+              >
+                Wszystkie
+              </button>
+            </KaTeXTooltip>
+            {genreOptions.map((category) => (
+              <KaTeXTooltip
+                key={category}
+                formula={`\\text{Genre:}~\\text{${escapeTex(formatCategory(category))}}`}
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-label={`Filter genre ${formatCategory(category)}`}
+                  aria-selected={genreFilter === category}
+                  className={genreFilter === category ? "is-active" : undefined}
+                  onClick={() => setGenreFilter(category)}
+                >
+                  {formatCategory(category)}
+                </button>
+              </KaTeXTooltip>
+            ))}
+            {hasUncategorizedTracks ? (
+              <KaTeXTooltip formula="\text{Tracks without a genre}">
+                <button
+                  type="button"
+                  role="option"
+                  aria-label="Tracks without a genre"
+                  aria-selected={genreFilter === "uncategorized"}
+                  className={
+                    genreFilter === "uncategorized" ? "is-active" : undefined
+                  }
+                  onClick={() => setGenreFilter("uncategorized")}
+                >
+                  Bez kategorii
+                </button>
+              </KaTeXTooltip>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="library-toolbar">
           <h2 className="library-section-title">
-            {activeTab === "favorites" ? "Moje Ulubione" : activeProfileName}
+            {activeTab === "favorites"
+              ? "Moje Ulubione"
+              : activeTab === "genres" && genreFilter !== "all"
+                ? genreFilter === "uncategorized"
+                  ? "Bez kategorii"
+                  : formatCategory(genreFilter)
+                : activeTab === "genres"
+                  ? "Gatunki"
+                  : activeProfileName}
           </h2>
-          <span className="library-toolbar-count">{visibleTracks.length} items</span>
+          <div className="library-toolbar-actions">
+            <span className="library-toolbar-count">
+              {visibleTracks.length} items
+            </span>
+            <KaTeXTooltip formula={`\\text{${escapeTex(playQueueLabel)}}`}>
+              <button
+                type="button"
+                className="library-queue-play"
+                aria-label={playQueueLabel}
+                disabled={busy || visibleTracks.length === 0}
+                onClick={() =>
+                  onPlayQueue(selectedQueue, visibleTracks[0]?.id ?? null)
+                }
+              >
+                <Icon name="play" size={13} />
+              </button>
+            </KaTeXTooltip>
+          </div>
         </div>
 
         {visibleTracks.length === 0 ? (
@@ -273,6 +386,7 @@ export const MusicLibrary = memo(function MusicLibrary({
               const active = track.id === currentTrackId;
               const expanded = track.id === expandedTrackId;
               const favorite = favoriteTrackIds.includes(track.id);
+              const category = categoryByTrack.get(track.id) ?? null;
               return (
                 <article
                   key={track.id}
@@ -315,16 +429,8 @@ export const MusicLibrary = memo(function MusicLibrary({
                         </span>
                       </span>
                       <span className="track-card-title">{track.title}</span>
-                      <span className="track-card-meta">
-                        {track.source === "youtube"
-                          ? `${track.author ?? "YouTube"} · link`
-                          : track.source === "spotify"
-                            ? `${track.author ?? "Spotify"} · ${track.providerKind ?? "link"}`
-                            : track.source === "soundcloud"
-                              ? `${track.author ?? "SoundCloud"} · link`
-                              : track.source === "tiktok"
-                                ? `${track.author ?? "TikTok"} · link`
-                                : `${track.extension.toUpperCase()} · local file`}
+                      <span className="track-card-meta track-card-author">
+                        {track.author ?? getSourceLabel(track)}
                       </span>
                     </button>
                   </KaTeXTooltip>
@@ -332,28 +438,31 @@ export const MusicLibrary = memo(function MusicLibrary({
                     <div className="track-card-details">
                       <div className="track-detail-grid">
                         <div>
-                          <span>KATEGORIA</span>
-                          <strong>
-                            {track.category ??
-                              (active ? currentTrackCategory : null) ??
-                              "AI pending"}
-                          </strong>
+                          <span>GATUNEK</span>
+                          {category ? (
+                            <KaTeXTooltip
+                              placement="bottom"
+                              formula={`\\text{Filter genre:}~\\text{${escapeTex(formatCategory(category))}}`}
+                            >
+                              <button
+                                type="button"
+                                className="track-category-button"
+                                aria-label={`Filter genre ${formatCategory(category)}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  selectGenre(category);
+                                }}
+                              >
+                                {formatCategory(category)}
+                              </button>
+                            </KaTeXTooltip>
+                          ) : (
+                            <strong>AI pending</strong>
+                          )}
                         </div>
                         <div>
                           <span>ŹRÓDŁO</span>
-                          <strong>
-                            {track.source
-                              ? `${track.source} stream`
-                              : `${track.extension.toUpperCase()} local`}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>AUTOR</span>
-                          <strong>{track.author ?? "FocusFlow library"}</strong>
-                        </div>
-                        <div>
-                          <span>AKTYWNOŚĆ</span>
-                          <strong>{activeProfileName}</strong>
+                          <strong>{getSourceLabel(track)}</strong>
                         </div>
                       </div>
                     </div>
@@ -422,10 +531,22 @@ export const MusicLibrary = memo(function MusicLibrary({
     previous.onSelect === next.onSelect &&
     previous.onRemove === next.onRemove &&
     previous.onToggleFavorite === next.onToggleFavorite &&
-    previous.onSetFavoritesOnly === next.onSetFavoritesOnly
+    previous.onPlayQueue === next.onPlayQueue
   );
 });
 
 function escapeTex(value: string): string {
   return value.replace(/([\\{}$&#^_~%])/g, "\\$1");
+}
+
+function formatCategory(category: TrackCategory): string {
+  return category.replace(/_/g, " ");
+}
+
+function getSourceLabel(track: Track): string {
+  if (track.source === "youtube") return "YouTube";
+  if (track.source === "spotify") return "Spotify";
+  if (track.source === "soundcloud") return "SoundCloud";
+  if (track.source === "tiktok") return "TikTok";
+  return `${track.extension.toUpperCase()} · local`;
 }

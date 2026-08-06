@@ -20,6 +20,7 @@ interface KaTeXTooltipProps {
   formula: string;
   children: ReactElement;
   placement?: "top" | "bottom" | "left" | "right";
+  wrapperClassName?: string;
 }
 
 type InteractiveProps = {
@@ -34,6 +35,7 @@ export function KaTeXTooltip({
   formula,
   children,
   placement = "top",
+  wrapperClassName,
 }: KaTeXTooltipProps) {
   const tooltipId = useId();
   const [open, setOpen] = useState(false);
@@ -139,7 +141,10 @@ export function KaTeXTooltip({
   } as InteractiveProps);
 
   return (
-    <span ref={wrapperRef} className={`katex-tip katex-tip--${safePlacement}`}>
+    <span
+      ref={wrapperRef}
+      className={`katex-tip katex-tip--${safePlacement} ${wrapperClassName ?? ""}`.trim()}
+    >
       {child}
       {open ? (
         createPortal(

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
-import { normalizeMiniGoalText } from "../lib/timer";
-import type { MiniGoal } from "../types";
+import { normalizeMiniGoalText } from "../../lib/timer";
+import type { MiniGoal } from "../../types";
 
 interface MiniGoalChecklistProps {
   items: MiniGoal[];

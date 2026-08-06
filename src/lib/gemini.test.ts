@@ -111,6 +111,49 @@ describe("Gemini mini-goals", () => {
     );
   });
 
+  it("includes userAboutMe background prompt in Gemini request body", async () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      miniGoals: ["Create project folder", "Setup React app"],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await generateMiniGoalsDetailed(
+      "Build app",
+      {
+        kind: "timer",
+        workDurationMinutes: 30,
+        breakDurationMinutes: null,
+        userAboutMe: "Senior React developer specializing in TypeScript",
+      },
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.stringContaining(
+          "User background / About me (psychological context & memory): Senior React developer specializing in TypeScript",
+        ),
+      }),
+    );
+  });
+
   it("supports one-step clarification before generating mini-goals", async () => {
     vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(

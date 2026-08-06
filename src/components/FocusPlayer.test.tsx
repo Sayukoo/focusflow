@@ -2,21 +2,21 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { DEFAULT_TIMER_SETTINGS, type Track } from "../types";
-import { FocusPlayer } from "./FocusPlayer";
+import { FocusPlayer } from "./player/FocusPlayer";
 
-vi.mock("./MusicLibrary", () => ({
+vi.mock("./library/MusicLibrary", () => ({
   MusicLibrary: () => null,
 }));
 
-vi.mock("./ProfilePicker", () => ({
+vi.mock("./settings/ProfilePicker", () => ({
   ProfilePicker: () => null,
 }));
 
-vi.mock("./RemotePlayer", () => ({
+vi.mock("./audio/RemotePlayer", () => ({
   RemotePlayer: () => null,
 }));
 
-vi.mock("./TimerSettings", () => ({
+vi.mock("./settings/TimerSettings", () => ({
   TimerSettings: () => null,
 }));
 
@@ -52,7 +52,6 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
     progress: 0,
     duration: 0,
     timerLabel: "0:00",
-    timerPhase: null,
     mode: "deep",
     timerSettings: DEFAULT_TIMER_SETTINGS,
     timerSettingsOpen: false,
@@ -60,6 +59,7 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
     busy: false,
     error: null,
     browserMode: true,
+    windowPinned: false,
     onToggleLibrary: vi.fn(),
     onToggleProfilePicker: vi.fn(),
     onSelectProfile: vi.fn(),
@@ -76,8 +76,8 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
     onRemoteError: vi.fn(),
     onRefresh: vi.fn(),
     onOpenFolder: vi.fn(),
-    onSelect: vi.fn(),
-    onRemove: vi.fn(),
+    onSelectTrack: vi.fn(),
+    onRemoveTrack: vi.fn(),
     onSetFavoritesOnly: vi.fn(),
     onTogglePlay: vi.fn(),
     onNext: vi.fn(),
@@ -85,10 +85,12 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
     onSeek: vi.fn(),
     onVolume: vi.fn(),
     onToggleFavorite: vi.fn(),
+    onPlayQueue: vi.fn(),
     onOpenTimerSettings: vi.fn(),
     onCloseTimerSettings: vi.fn(),
-    onTimerSettingsChange: vi.fn(),
+    onChangeTimerSettings: vi.fn(),
     onClearError: vi.fn(),
+    onSetWindowPinned: vi.fn(),
   };
 }
 
@@ -153,8 +155,8 @@ describe("FocusPlayer AI category chip", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("places an editable checklist below the timer and persists changes", () => {
-    const onTimerSettingsChange = vi.fn();
+  it("places an editable checklist below the timer without a Mini goals heading", () => {
+    const onChangeTimerSettings = vi.fn();
     const timerSettings = {
       ...DEFAULT_TIMER_SETTINGS,
       kind: "timer" as const,
@@ -178,20 +180,31 @@ describe("FocusPlayer AI category chip", () => {
       <FocusPlayer
         {...createProps()}
         timerSettings={timerSettings}
-        onTimerSettingsChange={onTimerSettingsChange}
+        onChangeTimerSettings={onChangeTimerSettings}
       />,
     );
 
+    expect(screen.queryByText("Mini goals")).not.toBeInTheDocument();
+    expect(screen.queryByText("MINI GOALS")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Back" }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".focus-mini-goals--desktop")).not.toBeNull();
+
     const timer = screen.getByRole("button", { name: "Timer 0:00" });
+    const goal = screen.getByText("Finish the outline");
     const checkbox = screen.getByRole("checkbox", {
       name: "Mark mini goal 1 complete",
     });
+    expect(
+      timer.compareDocumentPosition(goal) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       timer.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     fireEvent.click(checkbox);
-    expect(onTimerSettingsChange).toHaveBeenLastCalledWith({
+    expect(onChangeTimerSettings).toHaveBeenLastCalledWith({
       ...timerSettings,
       miniGoals: [
         { ...timerSettings.miniGoals[0], completed: true },
@@ -202,12 +215,64 @@ describe("FocusPlayer AI category chip", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Mini goal 1" }), {
       target: { value: "Review the document" },
     });
-    expect(onTimerSettingsChange).toHaveBeenLastCalledWith({
+    expect(onChangeTimerSettings).toHaveBeenLastCalledWith({
       ...timerSettings,
       miniGoals: [
         { ...timerSettings.miniGoals[0], text: "Review the document" },
         timerSettings.miniGoals[1],
       ],
     });
+  });
+
+  it("keeps the pinned view compact and leaves interval controls in the menu", () => {
+    const onSetWindowPinned = vi.fn();
+    const timerSettings = {
+      ...DEFAULT_TIMER_SETTINGS,
+      kind: "intervals" as const,
+      durationMinutes: 25,
+      workDurationMinutes: 25,
+      breakDurationMinutes: 5,
+      goal: "Finish the outline",
+      miniGoals: [
+        {
+          id: "mini-goal-1",
+          text: "Open the document",
+          completed: false,
+        },
+        {
+          id: "mini-goal-2",
+          text: "Write the first heading",
+          completed: true,
+        },
+      ],
+    };
+
+    render(
+      <FocusPlayer
+        {...createProps()}
+        browserMode={false}
+        windowPinned
+        timerSettings={timerSettings}
+        onSetWindowPinned={onSetWindowPinned}
+      />,
+    );
+
+    const unpinButton = screen.getByRole("button", { name: /Unpin window/i });
+    expect(unpinButton).toBeVisible();
+    expect(
+      screen.queryByText("Work", { selector: ".timer-phase-pill" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Work interval 40 minutes" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "Mini goal 2" }),
+    ).toHaveValue("Write the first heading");
+
+    fireEvent.click(unpinButton);
+    expect(onSetWindowPinned).toHaveBeenCalledWith(false);
   });
 });

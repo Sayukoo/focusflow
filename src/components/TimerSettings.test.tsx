@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TimerSettings } from "./TimerSettings";
+import { TimerSettings } from "./settings/TimerSettings";
 import { DEFAULT_TIMER_SETTINGS, type TimerSettings as TimerSettingsState } from "../types";
 
 function intervalSettings(): TimerSettingsState {
@@ -220,10 +220,16 @@ describe("TimerSettings", () => {
 
   it("requires a draft goal before leaving infinite mode", () => {
     const onChange = vi.fn();
+    const settings = {
+      ...DEFAULT_TIMER_SETTINGS,
+      kind: "infinite" as const,
+      durationMinutes: null,
+      goal: "",
+    };
     render(
       <TimerSettings
         open
-        settings={DEFAULT_TIMER_SETTINGS}
+        settings={settings}
         onClose={vi.fn()}
         onChange={onChange}
       />,
@@ -237,7 +243,7 @@ describe("TimerSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply timer settings" }));
 
     expect(onChange).toHaveBeenCalledWith({
-      ...DEFAULT_TIMER_SETTINGS,
+      ...settings,
       kind: "timer",
       durationMinutes: 45,
       goal: "Plan the first chapter",
@@ -265,5 +271,84 @@ describe("TimerSettings", () => {
 
     expect(onChange).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps mini-goals when switching between timer and intervals", () => {
+    const onChange = vi.fn();
+    const settings = {
+      ...DEFAULT_TIMER_SETTINGS,
+      kind: "timer" as const,
+      durationMinutes: 45,
+      goal: "Outline the report",
+      miniGoals: [
+        {
+          id: "mini-goal-1",
+          text: "Open the document",
+          completed: true,
+        },
+        {
+          id: "mini-goal-2",
+          text: "Draft the heading",
+          completed: false,
+        },
+      ],
+    };
+
+    render(
+      <TimerSettings
+        open
+        settings={settings}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Intervals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply timer settings" }));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "intervals",
+        goal: "Outline the report",
+        miniGoals: settings.miniGoals,
+        workDurationMinutes: 45,
+        breakDurationMinutes: 5,
+      }),
+    );
+  });
+
+  it("keeps mini-goals when changing an interval preset", () => {
+    const onChange = vi.fn();
+    const settings = {
+      ...intervalSettings(),
+      miniGoals: [
+        {
+          id: "mini-goal-1",
+          text: "Open the document",
+          completed: false,
+        },
+      ],
+    };
+
+    render(
+      <TimerSettings
+        open
+        settings={settings}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Work time 40 minutes" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply timer settings" }));
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...settings,
+      durationMinutes: 40,
+      workDurationMinutes: 40,
+      miniGoals: settings.miniGoals,
+    });
   });
 });

@@ -7,12 +7,20 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { delimiter, join, relative, resolve } from "node:path";
+import {
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { homedir } from "node:os";
 
 const root = resolve(import.meta.dirname, "..");
@@ -32,6 +40,7 @@ const androidTarget = "aarch64";
 const androidRustTarget = "aarch64-linux-android";
 const buildEnv = { ...process.env };
 const appVersion = readAppVersion();
+const lockedReleaseArtifacts = [];
 
 const desktopIconFiles = [
   "32x32.png",
@@ -72,6 +81,9 @@ const androidIconFiles = [
     `android/mipmap-${density}/ic_launcher_round.png`,
   ]),
 ];
+const androidResourceFiles = androidIconFiles.map((file) =>
+  file.slice("android/".length),
+);
 const iosIconFiles = [
   "ios/AppIcon-20x20@2x-1.png",
   "ios/AppIcon-20x20@1x.png",
@@ -95,7 +107,6 @@ const iosIconFiles = [
 const generatedIconPaths = new Set([
   ...desktopIconFiles,
   ...windowsStoreIconFiles,
-  ...androidIconFiles,
   ...iosIconFiles,
 ]);
 
@@ -171,6 +182,17 @@ function commandAvailable(command, args) {
   return !result.error && result.status === 0;
 }
 
+function nativeReleaseDirectory() {
+  const configuredTargetDirectory = buildEnv.CARGO_TARGET_DIR?.trim();
+  const targetRoot = configuredTargetDirectory
+    ? isAbsolute(configuredTargetDirectory)
+      ? resolve(configuredTargetDirectory)
+      : resolve(tauriRoot, configuredTargetDirectory)
+    : resolve(tauriRoot, "target");
+
+  return join(targetRoot, "release");
+}
+
 function findFiles(directory, predicate) {
   if (!existsSync(directory)) return [];
 
@@ -210,16 +232,38 @@ function copyArtifact(source, destination, label) {
 function cleanReleaseDirectory() {
   mkdirSync(releaseRoot, { recursive: true });
   for (const entry of readdirSync(releaseRoot, { withFileTypes: true })) {
-    rmSync(join(releaseRoot, entry.name), {
-      force: true,
-      recursive: entry.isDirectory(),
-    });
+    const path = join(releaseRoot, entry.name);
+    try {
+      rmSync(path, {
+        force: true,
+        recursive: entry.isDirectory(),
+      });
+    } catch (error) {
+      if (
+        process.platform !== "win32" ||
+        !["EACCES", "EBUSY", "EPERM"].includes(error?.code)
+      ) {
+        throw error;
+      }
+
+      const quarantinePath = join(
+        releaseRoot,
+        `.locked-${Date.now()}-${entry.name}`,
+      );
+      renameSync(path, quarantinePath);
+      lockedReleaseArtifacts.push(quarantinePath);
+      console.warn(
+        `  ⚠ Preserving locked generated artifact outside the active output: ${manifestPath(
+          quarantinePath,
+        )}`,
+      );
+    }
   }
 }
 
 function cleanNativeReleaseArtifacts() {
-  const targetRoot = resolve(tauriRoot, "target");
-  const targetRelease = resolve(targetRoot, "release");
+  const targetRelease = resolve(nativeReleaseDirectory());
+  const targetRoot = resolve(targetRelease, "..");
   const targetPrefix = `${targetRoot}${process.platform === "win32" ? "\\" : "/"}`;
 
   if (!targetRelease.startsWith(targetPrefix)) {
@@ -304,6 +348,69 @@ function readWindowsIcon(path) {
   return { data, frames };
 }
 
+function findAndroidResourceRoot() {
+  const candidates = [
+    join(iconRoot, "android"),
+    join(androidProject, "app", "src", "main", "res"),
+  ];
+  const resourceRoot = candidates.find((candidate) =>
+    androidResourceFiles.every((file) =>
+      existsSync(join(candidate, file)),
+    ),
+  );
+
+  if (!resourceRoot) {
+    throw new Error(
+      [
+        "Tauri icon generation completed without a complete Android resource set.",
+        `Checked: ${candidates.map(manifestPath).join(", ")}`,
+        `Expected: ${androidResourceFiles.join(", ")}`,
+      ].join(" "),
+    );
+  }
+
+  return resourceRoot;
+}
+
+function validateAndroidResources(resourceRoot) {
+  const invalid = [];
+  for (const file of androidResourceFiles) {
+    const path = join(resourceRoot, file);
+    if (!existsSync(path) || !statSync(path).size) {
+      invalid.push(file);
+      continue;
+    }
+
+    if (file.endsWith(".png")) {
+      readPngDimensions(readFileSync(path), manifestPath(path));
+    }
+  }
+
+  if (invalid.length) {
+    throw new Error(
+      `Invalid or empty Android icon resources in ${manifestPath(
+        resourceRoot,
+      )}: ${invalid.join(", ")}`,
+    );
+  }
+}
+
+function mirrorAndroidResources(resourceRoot) {
+  const iconResourceRoot = join(iconRoot, "android");
+  if (resolve(resourceRoot) === resolve(iconResourceRoot)) {
+    return iconResourceRoot;
+  }
+
+  rmSync(iconResourceRoot, { force: true, recursive: true });
+  for (const file of androidResourceFiles) {
+    const sourcePath = join(resourceRoot, file);
+    const destinationPath = join(iconResourceRoot, file);
+    mkdirSync(dirname(destinationPath), { recursive: true });
+    copyFileSync(sourcePath, destinationPath);
+  }
+  return iconResourceRoot;
+}
+
 function validateIconBundle() {
   const missing = [...generatedIconPaths].filter(
     (file) => !existsSync(join(iconRoot, file)),
@@ -317,9 +424,10 @@ function validateIconBundle() {
     );
   }
 
+  const allowedIconPaths = new Set([...generatedIconPaths, ...androidIconFiles]);
   const stale = findFiles(iconRoot, (path) => {
     const relativePath = relative(iconRoot, path).replaceAll("\\", "/");
-    return relativePath !== "focusflow.svg" && !generatedIconPaths.has(relativePath);
+    return relativePath !== "focusflow.svg" && !allowedIconPaths.has(relativePath);
   });
   if (stale.length) {
     throw new Error(
@@ -356,6 +464,23 @@ function validateIconBundle() {
     );
   }
 
+  // Android icon mirroring is skipped while the release pipeline is Windows-only.
+  // Tauri may still emit Android assets; keep them if present without failing the build.
+  let androidRoot = null;
+  try {
+    androidRoot = findAndroidResourceRoot();
+    clearAndroidLauncherResources(androidRoot, true);
+    validateAndroidResources(androidRoot);
+    androidRoot = mirrorAndroidResources(androidRoot);
+    console.log(`  ✓ Android resources present: ${manifestPath(androidRoot)}`);
+  } catch (error) {
+    console.warn(
+      `  ⚠ Android icon resources skipped (Windows-only release): ${errorMessage(
+        error,
+      )}`,
+    );
+  }
+
   const sourceSha256 = sha256(iconSource);
   const icoSha256 = sha256(icoPath);
   console.log(`  ✓ SVG source SHA-256: ${sourceSha256}`);
@@ -363,13 +488,14 @@ function validateIconBundle() {
     `  ✓ Windows ICO frames: ${actualSizes.join(", ")} (SHA-256: ${icoSha256})`,
   );
   console.log(
-    `  ✓ Verified ${generatedIconPaths.size} generated desktop, Windows, Android, and iOS resources`,
+    `  ✓ Verified ${generatedIconPaths.size} generated desktop, Windows Store, and iOS resources`,
   );
 
   return {
     sourceSha256,
     icoPath,
     icoSha256,
+    androidRoot,
     frames: ico.frames,
   };
 }
@@ -401,19 +527,17 @@ function copyDirectory(source, destination) {
   }
 }
 
-function syncAndroidIcons() {
-  const source = join(iconRoot, "android");
-  const destination = join(androidProject, "app", "src", "main", "res");
-  if (!existsSync(source) || !existsSync(destination)) {
-    throw new Error(
-      "Android icon resources or the initialized Android resource directory is missing.",
-    );
-  }
-
+function clearAndroidLauncherResources(destination, preserveGenerated) {
   const iconResourceDirectories = [
-    "mipmap-anydpi-v26",
-    ...androidDensities.map((density) => `mipmap-${density}`),
-    "values",
+    "drawable",
+    "drawable-v24",
+    ...(preserveGenerated
+      ? []
+      : [
+          "mipmap-anydpi-v26",
+          ...androidDensities.map((density) => `mipmap-${density}`),
+          "values",
+        ]),
   ];
   for (const directory of iconResourceDirectories) {
     const directoryPath = join(destination, directory);
@@ -425,15 +549,27 @@ function syncAndroidIcons() {
       }
     }
   }
+}
 
-  copyDirectory(source, destination);
-
-  const mismatched = androidIconFiles.filter((file) => {
-    const sourcePath = join(iconRoot, file);
-    const destinationPath = join(
-      destination,
-      file.slice("android/".length),
+function syncAndroidIcons() {
+  const destination = join(androidProject, "app", "src", "main", "res");
+  if (!existsSync(destination)) {
+    throw new Error(
+      "The initialized Android resource directory is missing.",
     );
+  }
+
+  const source = findAndroidResourceRoot();
+  const sourceIsDestination =
+    resolve(source) === resolve(destination);
+  clearAndroidLauncherResources(destination, sourceIsDestination);
+  if (!sourceIsDestination) {
+    copyDirectory(source, destination);
+  }
+
+  const mismatched = androidResourceFiles.filter((file) => {
+    const sourcePath = join(source, file);
+    const destinationPath = join(destination, file);
     return (
       !existsSync(destinationPath) ||
       sha256(sourcePath) !== sha256(destinationPath)
@@ -444,9 +580,27 @@ function syncAndroidIcons() {
       `Android icon resources were not synchronized: ${mismatched.join(", ")}`,
     );
   }
+  validateAndroidResources(destination);
   console.log(
-    `  ✓ Synchronized ${androidIconFiles.length} Android icon resources from the regenerated bundle`,
+    `  ✓ Synchronized ${androidResourceFiles.length} Android icon resources from ${manifestPath(
+      source,
+    )}`,
   );
+}
+
+function ensureAndroidResourceCompatibility() {
+  const propertiesPath = join(androidProject, "gradle.properties");
+  if (!existsSync(propertiesPath)) return;
+
+  const current = readFileSync(propertiesPath, "utf8");
+  const nextLine = "android.nonTransitiveRClass=false";
+  const updated = /^android\.nonTransitiveRClass=.*$/m.test(current)
+    ? current.replace(/^android\.nonTransitiveRClass=.*$/m, nextLine)
+    : `${current.trimEnd()}\n${nextLine}\n`;
+
+  if (updated !== current) {
+    writeFileSync(propertiesPath, updated, "utf8");
+  }
 }
 
 function locateAndroidSdk() {
@@ -619,7 +773,7 @@ function buildPortableWindowsExe(iconVerification) {
     throw new Error("The portable .exe build must run on Windows.");
   }
 
-  const targetRelease = join(tauriRoot, "target", "release");
+  const targetRelease = nativeReleaseDirectory();
   cleanNativeReleaseArtifacts();
   const buildStartedAt = Date.now();
 
@@ -681,6 +835,7 @@ function buildAndroidApk() {
   }
 
   syncAndroidIcons();
+  ensureAndroidResourceCompatibility();
 
   const apkOutputRoot = join(androidProject, "app", "build", "outputs", "apk");
   rmSync(apkOutputRoot, { force: true, recursive: true });
@@ -733,7 +888,7 @@ function addArtifactToManifest(lines, label, path) {
   );
 }
 
-function writeManifest({ executable, apk, failure, iconVerification }) {
+function writeManifest({ executable, failure, iconVerification }) {
   const status = failure ? (executable ? "partial" : "failed") : "complete";
   const iconsVerified = Boolean(iconVerification);
   const lines = [
@@ -741,14 +896,14 @@ function writeManifest({ executable, apk, failure, iconVerification }) {
     `Build status: ${status}`,
     `Built: ${new Date().toISOString()}`,
     `Version: ${appVersion}`,
-    "Android target: ARM64 (aarch64)",
+    "Android build: disabled (Windows-only release)",
     `Icon source: ${manifestPath(iconSource)}`,
     `Icon source SHA-256: ${
       iconVerification?.sourceSha256 ?? "not verified"
     }`,
     `Icon bundle: ${
       iconsVerified
-        ? "verified Windows ICO frames, desktop PNGs, Windows Store, Android, and iOS resources"
+        ? "verified Windows ICO frames, desktop PNGs, Windows Store, and iOS resources"
         : "not verified"
     }`,
     `Windows ICO: ${
@@ -762,12 +917,27 @@ function writeManifest({ executable, apk, failure, iconVerification }) {
             .join(", ")
         : "not verified"
     }`,
+    `Android icon resources: ${
+      iconVerification?.androidRoot
+        ? manifestPath(iconVerification.androidRoot)
+        : "skipped (Windows-only release)"
+    }`,
     "",
     "Artifacts:",
   ];
 
   addArtifactToManifest(lines, "Windows portable", executable);
-  addArtifactToManifest(lines, "Android APK (ARM64)", apk);
+  lines.push("Android APK (ARM64): disabled");
+
+  if (lockedReleaseArtifacts.length) {
+    lines.push(
+      "",
+      "Previous locked release files preserved (not used by this build):",
+      ...lockedReleaseArtifacts.map(
+        (path) => `  ${manifestPath(path)}`,
+      ),
+    );
+  }
 
   lines.push(
     "",
@@ -795,7 +965,6 @@ function main() {
   cleanReleaseDirectory();
 
   let executable;
-  let apk;
   let failure;
   let iconVerification;
   let stage = "icon preparation";
@@ -804,13 +973,11 @@ function main() {
     iconVerification = regenerateIcons();
     stage = "Windows build";
     executable = buildPortableWindowsExe(iconVerification);
-    stage = "Android build";
-    apk = buildAndroidApk();
   } catch (error) {
     failure = { message: errorMessage(error), stage };
   }
 
-  writeManifest({ executable, apk, failure, iconVerification });
+  writeManifest({ executable, failure, iconVerification });
 
   if (failure) {
     console.error(`\n✗ Release build stopped during ${failure.stage}.`);
@@ -825,9 +992,9 @@ function main() {
     return;
   }
 
-  console.log("\n✓ Build complete");
+  console.log("\n✓ Build complete (Windows-only)");
   console.log(`  ${manifestPath(executable)}`);
-  console.log(`  ${manifestPath(apk)}`);
+  console.log("  Android APK: disabled");
   console.log(`  ${manifestPath(join(releaseRoot, "BUILD-MANIFEST.txt"))}`);
 }
 

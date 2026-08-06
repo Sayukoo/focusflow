@@ -1,11 +1,16 @@
-import { useEffect } from "react";
-import { FocusPlayer } from "./components/FocusPlayer";
+import { useEffect, useState } from "react";
+import { FocusPlayer } from "./components";
 import { useAudioLibrary } from "./hooks/useAudioLibrary";
 import { ensureWindowsAutostart } from "./lib/autostart";
+import {
+  restoreWindowPin,
+  setWindowPinned as setNativeWindowPinned,
+} from "./lib/window";
 import "./styles.css";
 
 function App() {
   const player = useAudioLibrary();
+  const [windowPinned, setWindowPinnedState] = useState(false);
 
   useEffect(() => {
     void ensureWindowsAutostart().catch(() => {
@@ -13,6 +18,26 @@ function App() {
       // prevent the player from opening.
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void restoreWindowPin().then((pinned) => {
+      if (active) setWindowPinnedState(pinned);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSetWindowPinned = async (pinned: boolean) => {
+    try {
+      await setNativeWindowPinned(pinned);
+      setWindowPinnedState(pinned);
+    } catch (error) {
+      player.setError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   if (!player.ready) {
     return (
@@ -38,7 +63,6 @@ function App() {
       progress={player.progress}
       duration={player.duration}
       timerLabel={player.timerLabel}
-      timerPhase={player.timerPhase}
       mode={player.mode}
       timerSettings={player.timerSettings}
       timerSettingsOpen={player.timerSettingsOpen}
@@ -46,11 +70,18 @@ function App() {
       busy={player.busy}
       error={player.error}
       browserMode={player.browserMode}
+      windowPinned={windowPinned}
       onToggleLibrary={player.setLibraryOpen}
       onToggleProfilePicker={player.setProfilePickerOpen}
       onSelectProfile={(profileId) => void player.switchProfile(profileId)}
       onCreateProfile={(name) => void player.createProfile(name)}
       onDeleteProfile={(profileId) => void player.deleteProfile(profileId)}
+      onUserAboutMeChange={(userAboutMe) =>
+        player.updateTimerSettings({
+          ...player.timerSettings,
+          userAboutMe,
+        })
+      }
       onImport={() => void player.importTracks()}
       onAddLink={(url) => void player.addRemoteLink(url)}
       onDropFiles={(files) => void player.importDroppedFiles(files)}
@@ -66,8 +97,8 @@ function App() {
         })
       }
       onOpenFolder={() => void player.openMusicFolder()}
-      onSelect={(trackId, autoplay) => void player.selectTrack(trackId, autoplay)}
-      onRemove={(track) => void player.removeTrack(track)}
+      onSelectTrack={(trackId) => void player.selectTrack(trackId)}
+      onRemoveTrack={(track) => void player.removeTrack(track)}
       onSetFavoritesOnly={player.setFavoritesOnly}
       onTogglePlay={() => void player.togglePlay()}
       onNext={() => void player.playNext()}
@@ -75,10 +106,12 @@ function App() {
       onSeek={player.seek}
       onVolume={player.setVolume}
       onToggleFavorite={player.toggleFavorite}
+      onPlayQueue={player.playQueue}
       onOpenTimerSettings={() => player.setTimerSettingsOpen(true)}
       onCloseTimerSettings={() => player.setTimerSettingsOpen(false)}
       onTimerSettingsChange={player.updateTimerSettings}
       onClearError={() => player.setError(null)}
+      onSetWindowPinned={handleSetWindowPinned}
     />
   );
 }

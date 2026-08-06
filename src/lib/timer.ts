@@ -73,6 +73,14 @@ export function normalizeGoal(value: unknown): string {
     .slice(0, MAX_GOAL_LENGTH);
 }
 
+export function normalizeUserAboutMe(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 4000);
+}
+
 export function normalizeMiniGoalText(value: unknown): string {
   if (typeof value !== "string") return "";
   return value
@@ -108,8 +116,9 @@ export function normalizeTimerSettings(value: unknown): TimerSettings {
       ? candidate.pauseWhenMusicPaused
       : DEFAULT_TIMER_SETTINGS.pauseWhenMusicPaused;
   const goal = normalizeGoal(candidate.goal);
+  const userAboutMe = normalizeUserAboutMe(candidate.userAboutMe);
   const kind: TimerSettings["kind"] =
-    requestedKind !== "infinite" && !goal ? "infinite" : requestedKind;
+    requestedKind === "timer" && !goal ? "infinite" : requestedKind;
   const workDurationMinutes = normalizeMinutes(
     candidate.workDurationMinutes ??
       (requestedKind === "intervals" ? candidate.durationMinutes : undefined),
@@ -136,7 +145,20 @@ export function normalizeTimerSettings(value: unknown): TimerSettings {
     workDurationMinutes,
     breakDurationMinutes,
     goal: kind === "infinite" ? "" : goal,
+    userAboutMe,
     miniGoals: kind === "infinite" ? [] : normalizeMiniGoals(candidate.miniGoals),
+    phaseSoundEnabled:
+      typeof candidate.phaseSoundEnabled === "boolean"
+        ? candidate.phaseSoundEnabled
+        : DEFAULT_TIMER_SETTINGS.phaseSoundEnabled,
+    phaseVoiceEnabled:
+      typeof candidate.phaseVoiceEnabled === "boolean"
+        ? candidate.phaseVoiceEnabled || candidate.voicePack === "system"
+        : DEFAULT_TIMER_SETTINGS.phaseVoiceEnabled,
+    voicePack:
+      candidate.voicePack === "calm-female"
+        ? candidate.voicePack
+        : DEFAULT_TIMER_SETTINGS.voicePack,
   };
 }
 

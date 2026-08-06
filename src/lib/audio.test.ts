@@ -15,7 +15,7 @@ import {
   saveFavoriteTrackIds,
   uniqueFilename,
 } from "./audio";
-import type { Track } from "../types";
+import { DEFAULT_TIMER_SETTINGS, type Track } from "../types";
 
 describe("formatClock", () => {
   it("formats minutes and seconds", () => {
@@ -40,11 +40,9 @@ describe("formatTimerLabel", () => {
   it("shows elapsed time for infinite sessions", () => {
     expect(
       formatTimerLabel(125, {
+        ...DEFAULT_TIMER_SETTINGS,
         kind: "infinite",
         durationMinutes: null,
-        pauseWhenMusicPaused: true,
-        workDurationMinutes: 25,
-        breakDurationMinutes: 5,
         goal: "",
         miniGoals: [],
       }),
@@ -54,11 +52,9 @@ describe("formatTimerLabel", () => {
   it("shows remaining time for timer sessions", () => {
     expect(
       formatTimerLabel(60, {
+        ...DEFAULT_TIMER_SETTINGS,
         kind: "timer",
         durationMinutes: 60,
-        pauseWhenMusicPaused: true,
-        workDurationMinutes: 25,
-        breakDurationMinutes: 5,
         goal: "",
         miniGoals: [],
       }),
@@ -67,9 +63,9 @@ describe("formatTimerLabel", () => {
 
   it("shows the active interval phase countdown", () => {
     const settings = {
+      ...DEFAULT_TIMER_SETTINGS,
       kind: "intervals" as const,
       durationMinutes: 25,
-      pauseWhenMusicPaused: true,
       workDurationMinutes: 25,
       breakDurationMinutes: 5,
       goal: "",
@@ -198,6 +194,7 @@ describe("favorite persistence", () => {
 describe("timer snapshot persistence", () => {
   it("round-trips editable mini-goal progress", () => {
     const timerSettings = {
+      ...DEFAULT_TIMER_SETTINGS,
       kind: "timer" as const,
       durationMinutes: 25,
       pauseWhenMusicPaused: true,

@@ -1,28 +1,39 @@
-import { memo, useState, type FormEvent } from "react";
-import type { MusicProfile } from "../lib/profiles";
-import { Icon } from "./Icon";
-import { KaTeXTooltip } from "./KaTeXTooltip";
+import { memo, useEffect, useState, type FormEvent } from "react";
+import type { MusicProfile } from "../../lib/profiles";
+import { Icon } from "../ui/Icon";
+import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 
 interface ProfilePickerProps {
   open: boolean;
   profiles: MusicProfile[];
   activeProfileId: string;
+  userAboutMe?: string;
   onClose: () => void;
   onSelect: (profileId: string) => void | Promise<void>;
   onCreate: (name: string) => void | Promise<void>;
   onDelete: (profileId: string) => void | Promise<void>;
+  onUserAboutMeChange?: (userAboutMe: string) => void;
 }
 
 export const ProfilePicker = memo(function ProfilePicker({
   open,
   profiles,
   activeProfileId,
+  userAboutMe,
   onClose,
   onSelect,
   onCreate,
   onDelete,
+  onUserAboutMeChange,
 }: ProfilePickerProps) {
   const [name, setName] = useState("");
+  const [draftAboutMe, setDraftAboutMe] = useState(userAboutMe ?? "");
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    setDraftAboutMe(userAboutMe ?? "");
+  }, [userAboutMe]);
+
   if (!open) return null;
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -32,23 +43,31 @@ export const ProfilePicker = memo(function ProfilePicker({
     setName("");
   };
 
+  const handleSaveAboutMe = () => {
+    onUserAboutMeChange?.(draftAboutMe);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
+  };
+
+  const isChanged = draftAboutMe !== (userAboutMe ?? "");
+
   return (
     <div
       className="profile-popover"
       role="dialog"
-      aria-label="Profiles"
+      aria-label="Account and Profile Settings"
       onClick={(event) => event.stopPropagation()}
     >
       <div className="profile-popover-header">
         <div>
-          <strong>Profiles</strong>
+          <strong>Account & Profiles</strong>
           <span>Private on this device</span>
         </div>
-        <KaTeXTooltip formula="\text{Close profiles}">
+        <KaTeXTooltip formula="\text{Close settings}">
           <button
             type="button"
             className="icon-btn ghost"
-            aria-label="Close profiles"
+            aria-label="Close settings"
             onClick={onClose}
           >
             <Icon name="close" size={17} />
@@ -111,6 +130,38 @@ export const ProfilePicker = memo(function ProfilePicker({
           <Icon name="plus" size={16} />
         </button>
       </form>
+
+      <div className="profile-about-me-section">
+        <div className="profile-about-me-header">
+          <span>Informacje o mnie</span>
+        </div>
+        <div className="profile-about-me-wrap">
+          <textarea
+            rows={5}
+            maxLength={4000}
+            placeholder="Opisz swój kontekst, rolę, preferencje lub nuanse (np. 'Jestem psychologiem, miewam lęk przed oceną, lubię małe kroki...')"
+            value={draftAboutMe}
+            aria-label="Informacje o mnie"
+            onChange={(event) => setDraftAboutMe(event.target.value)}
+          />
+          <div className="profile-about-me-actions">
+            <button
+              type="button"
+              className="profile-about-me-save-btn"
+              disabled={!isChanged && !justSaved}
+              onClick={handleSaveAboutMe}
+            >
+              {justSaved ? (
+                <>
+                  <Icon name="check" size={14} /> Zapisano
+                </>
+              ) : (
+                "Zapisz"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }, (previous, next) => {
@@ -119,10 +170,12 @@ export const ProfilePicker = memo(function ProfilePicker({
   return (
     previous.profiles === next.profiles &&
     previous.activeProfileId === next.activeProfileId &&
+    previous.userAboutMe === next.userAboutMe &&
     previous.onClose === next.onClose &&
     previous.onSelect === next.onSelect &&
     previous.onCreate === next.onCreate &&
-    previous.onDelete === next.onDelete
+    previous.onDelete === next.onDelete &&
+    previous.onUserAboutMeChange === next.onUserAboutMeChange
   );
 });
 

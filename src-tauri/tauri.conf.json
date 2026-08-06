@@ -15,11 +15,11 @@
         "title": "FocusFlow",
         "width": 1280,
         "height": 800,
-        "minWidth": 960,
-        "minHeight": 640,
+        "minWidth": 320,
+        "minHeight": 420,
         "resizable": true,
         "decorations": true,
-        "transparent": false
+      "transparent": true
       }
     ],
     "security": {

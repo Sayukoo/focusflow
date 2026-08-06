@@ -32,9 +32,12 @@ import {
   timerLimitMs,
   type TimerClock,
 } from "../lib/timer";
+import { announcePhaseTransition } from "../lib/phaseCues";
+import { getTrackCategory } from "../lib/gemini";
 import {
   DEFAULT_TIMER_SETTINGS,
   type FocusMode,
+  type PlaybackQueue,
   type TimerPhase,
   type TimerSettings,
   type Track,
@@ -75,13 +78,22 @@ export function useAudioLibrary() {
   const activeProfileIdRef = useRef(profileStore.activeProfileId);
   const currentIdRef = useRef<string | null>(null);
   const playingRef = useRef(false);
-  const favoritesOnlyRef = useRef(false);
+  const playbackQueueRef = useRef<PlaybackQueue>({ kind: "all" });
   const favoriteTrackIdsRef = useRef<string[]>(
     getProfileFavoriteIds(profileStore),
   );
   const timerSettingsRef = useRef<TimerSettings>(DEFAULT_TIMER_SETTINGS);
   const timerClockRef = useRef<TimerClock>(createTimerClock());
   const sessionStartedRef = useRef(false);
+  const voiceCueSequenceRef = useRef(0);
+  const lastAnnouncedPhaseRef = useRef<{
+    kind: TimerSettings["kind"];
+    phase: TimerPhase | "complete" | null;
+    cycleIndex: number | null;
+  }>({ kind: DEFAULT_TIMER_SETTINGS.kind, phase: null, cycleIndex: null });
+  const volumeRef = useRef(0.72);
+  const duckingMultiplierRef = useRef(1.0);
+  const [duckingMultiplier, setDuckingMultiplier] = useState(1.0);
   const loadRequestRef = useRef(0);
   const profileSwitchRequestRef = useRef(0);
   const lastRenderedProgressRef = useRef(0);
@@ -110,9 +122,12 @@ export function useAudioLibrary() {
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<string[]>(() =>
     getProfileFavoriteIds(profileStore),
   );
-  const [favoritesOnly, setFavoritesOnlyState] = useState(false);
+  const [playbackQueue, setPlaybackQueueState] = useState<PlaybackQueue>({
+    kind: "all",
+  });
   const [ready, setReady] = useState(false);
   const runningInTauri = useMemo(() => isTauriRuntime(), []);
+  const favoritesOnly = playbackQueue.kind === "favorites";
 
   const setPlayingState = useCallback((playing: boolean) => {
     playingRef.current = playing;
@@ -149,12 +164,27 @@ export function useAudioLibrary() {
     [tracks, currentTrackId],
   );
   const currentTrack = currentIndex >= 0 ? tracks[currentIndex] : null;
-  const getPlaybackTracks = useCallback(() => {
-    if (!favoritesOnlyRef.current) return tracksRef.current;
-    return tracksRef.current.filter((track) =>
-      favoriteTrackIdsRef.current.includes(track.id),
-    );
+  const filterTracksForQueue = useCallback((queue: PlaybackQueue) => {
+    if (queue.kind === "favorites") {
+      return tracksRef.current.filter((track) =>
+        favoriteTrackIdsRef.current.includes(track.id),
+      );
+    }
+    if (queue.kind === "recent") {
+      return [...tracksRef.current].reverse();
+    }
+    if (queue.kind === "genre") {
+      return tracksRef.current.filter((track) => {
+        const category = getTrackCategory(track);
+        return queue.category === null ? !category : category === queue.category;
+      });
+    }
+    return tracksRef.current;
   }, []);
+  const getPlaybackTracks = useCallback(
+    () => filterTracksForQueue(playbackQueueRef.current),
+    [filterTracksForQueue],
+  );
 
   useEffect(() => {
     tracksRef.current = tracks;
@@ -173,12 +203,84 @@ export function useAudioLibrary() {
   }, [favoriteTrackIds]);
 
   useEffect(() => {
-    favoritesOnlyRef.current = favoritesOnly;
-  }, [favoritesOnly]);
-
-  useEffect(() => {
     timerSettingsRef.current = timerSettings;
   }, [timerSettings]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  const resetPhaseCueBaseline = useCallback((settings: TimerSettings, elapsedMs = 0) => {
+    if (settings.kind !== "intervals") {
+      lastAnnouncedPhaseRef.current = {
+        kind: settings.kind,
+        phase: null,
+        cycleIndex: null,
+      };
+      return;
+    }
+    const phaseState = getIntervalPhase(elapsedMs, settings);
+    lastAnnouncedPhaseRef.current = {
+      kind: "intervals",
+      phase: phaseState.phase,
+      cycleIndex: phaseState.cycleIndex,
+    };
+  }, []);
+
+  const announceTimerCue = useCallback(
+    (
+      phase: TimerPhase | "complete",
+      settings: TimerSettings,
+      cycleIndex = 0,
+    ) => {
+      if (!settings.phaseSoundEnabled && !settings.phaseVoiceEnabled) return;
+      const voiceCueId = ++voiceCueSequenceRef.current;
+      const musicAudio = audioRef.current;
+      const duckMusic = () => {
+        if (
+          !settings.phaseVoiceEnabled ||
+          voiceCueId !== voiceCueSequenceRef.current
+        ) {
+          return;
+        }
+        duckingMultiplierRef.current = 0.2;
+        setDuckingMultiplier(0.2);
+        if (musicAudio && !musicAudio.paused) {
+          musicAudio.volume = Math.max(0, volumeRef.current * 0.2);
+        }
+      };
+      const restoreMusic = () => {
+        if (voiceCueId !== voiceCueSequenceRef.current) {
+          return;
+        }
+        duckingMultiplierRef.current = 1.0;
+        setDuckingMultiplier(1.0);
+        if (musicAudio && audioRef.current === musicAudio) {
+          musicAudio.volume = volumeRef.current;
+        }
+      };
+      void announcePhaseTransition({
+        phase,
+        breakDurationMinutes: settings.breakDurationMinutes,
+        cycleIndex,
+        soundEnabled: settings.phaseSoundEnabled,
+        voiceEnabled: settings.phaseVoiceEnabled,
+        voicePack: settings.voicePack,
+        volume: volumeRef.current,
+        onVoiceStart: duckMusic,
+        onVoiceEnd: restoreMusic,
+      });
+    },
+    [],
+  );
+
+  const startSession = useCallback(() => {
+    const wasActive = sessionStartedRef.current;
+    setSessionActive(true);
+    if (!wasActive) {
+      announceTimerCue("work", timerSettingsRef.current, 0);
+    }
+  }, [announceTimerCue, setSessionActive]);
 
   useEffect(() => {
     const activeProfile = profileStore.profiles.find(
@@ -207,7 +309,7 @@ export function useAudioLibrary() {
       setPlayingState(false);
       if (autoplay) {
         setPlayingState(true);
-        setSessionActive(true);
+        startSession();
       }
       return;
     }
@@ -223,12 +325,12 @@ export function useAudioLibrary() {
       try {
         if (requestId !== loadRequestRef.current) return;
         await audio.play();
-        setSessionActive(true);
+        startSession();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     }
-  }, [runningInTauri, setPlayingState, setSessionActive]);
+  }, [runningInTauri, setPlayingState, startSession]);
 
   const refresh = useCallback(async () => {
     if (!runningInTauri) {
@@ -316,6 +418,14 @@ export function useAudioLibrary() {
       const restoredSettings = normalizeTimerSettings(snapshot.timerSettings);
       timerSettingsRef.current = restoredSettings;
       setTimerSettings(restoredSettings);
+      lastAnnouncedPhaseRef.current = {
+        kind: restoredSettings.kind,
+        phase:
+          restoredSettings.kind === "intervals"
+            ? getIntervalPhase(0, restoredSettings).phase
+            : null,
+        cycleIndex: restoredSettings.kind === "intervals" ? 0 : null,
+      };
     } else if (snapshot.durationPreset === "infinity") {
       const restoredSettings = normalizeTimerSettings({
         ...DEFAULT_TIMER_SETTINGS,
@@ -324,6 +434,11 @@ export function useAudioLibrary() {
       });
       timerSettingsRef.current = restoredSettings;
       setTimerSettings(restoredSettings);
+      lastAnnouncedPhaseRef.current = {
+        kind: "infinite",
+        phase: null,
+        cycleIndex: null,
+      };
     } else if (typeof snapshot.durationPreset === "number") {
       const restoredSettings = normalizeTimerSettings({
         ...DEFAULT_TIMER_SETTINGS,
@@ -331,6 +446,14 @@ export function useAudioLibrary() {
       });
       timerSettingsRef.current = restoredSettings;
       setTimerSettings(restoredSettings);
+      lastAnnouncedPhaseRef.current = {
+        kind: restoredSettings.kind,
+        phase:
+          restoredSettings.kind === "intervals"
+            ? getIntervalPhase(0, restoredSettings).phase
+            : null,
+        cycleIndex: restoredSettings.kind === "intervals" ? 0 : null,
+      };
     }
 
     (async () => {
@@ -396,9 +519,9 @@ export function useAudioLibrary() {
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
-      audio.volume = volume;
+      audio.volume = Math.min(1, Math.max(0, volume * duckingMultiplier));
     }
-  }, [volume]);
+  }, [volume, duckingMultiplier]);
 
   const syncTimerClock = useCallback(() => {
     const nowMs = Date.now();
@@ -445,7 +568,41 @@ export function useAudioLibrary() {
         audioRef.current?.pause();
         setPlayingState(false);
         setSessionActive(false);
+        const baseline = lastAnnouncedPhaseRef.current;
+        if (baseline.kind !== "timer" || baseline.phase !== "complete") {
+          lastAnnouncedPhaseRef.current = {
+            kind: "timer",
+            phase: "complete",
+            cycleIndex: null,
+          };
+          announceTimerCue("complete", settings);
+        }
         return;
+      }
+
+      if (settings.kind === "intervals") {
+        const phaseState = getIntervalPhase(elapsedMs, settings);
+        const baseline = lastAnnouncedPhaseRef.current;
+        const phaseChanged =
+          baseline.kind !== "intervals" ||
+          baseline.phase !== phaseState.phase ||
+          baseline.cycleIndex !== phaseState.cycleIndex;
+        if (phaseChanged) {
+          const isInitialBaseline =
+            baseline.kind !== "intervals" || baseline.phase === null;
+          lastAnnouncedPhaseRef.current = {
+            kind: "intervals",
+            phase: phaseState.phase,
+            cycleIndex: phaseState.cycleIndex,
+          };
+          if (!isInitialBaseline) {
+            announceTimerCue(
+              phaseState.phase,
+              settings,
+              phaseState.cycleIndex,
+            );
+          }
+        }
       }
 
       const nextElapsed = elapsedSecondsFromMs(elapsedMs);
@@ -455,7 +612,7 @@ export function useAudioLibrary() {
     tick();
     const timer = window.setInterval(tick, 500);
     return () => window.clearInterval(timer);
-  }, [setPlayingState, setSessionActive]);
+  }, [announceTimerCue, setPlayingState, setSessionActive]);
 
   const selectTrack = useCallback(
     async (trackId: string, autoplay = false) => {
@@ -479,7 +636,7 @@ export function useAudioLibrary() {
       if (queue.length === 0) {
         setLibraryOpen(true);
         setError(
-          favoritesOnlyRef.current
+          playbackQueueRef.current.kind === "favorites"
             ? "Add a favorite to start this queue."
             : "Add music to begin.",
         );
@@ -504,7 +661,7 @@ export function useAudioLibrary() {
         setElapsed(0);
       }
       setPlayingState(true);
-      setSessionActive(true);
+      startSession();
       return;
     }
 
@@ -519,7 +676,7 @@ export function useAudioLibrary() {
           setElapsed(0);
         }
         await audio.play();
-        setSessionActive(true);
+        startSession();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -531,7 +688,7 @@ export function useAudioLibrary() {
     getPlaybackTracks,
     loadTrack,
     setPlayingState,
-    setSessionActive,
+    startSession,
     timerSettings,
   ]);
 
@@ -568,8 +725,8 @@ export function useAudioLibrary() {
 
   const onRemotePlaying = useCallback((playing: boolean) => {
     setPlayingState(playing);
-    if (playing) setSessionActive(true);
-  }, [setPlayingState, setSessionActive]);
+    if (playing) startSession();
+  }, [setPlayingState, startSession]);
 
   const onRemoteEnded = useCallback(() => {
     void playNext(true);
@@ -642,9 +799,38 @@ export function useAudioLibrary() {
     commitProfileStore(next);
   }, [commitProfileStore]);
 
+  const playQueue = useCallback(
+    (queue: PlaybackQueue, trackId: string | null = null) => {
+      const list = filterTracksForQueue(queue);
+      playbackQueueRef.current = queue;
+      setPlaybackQueueState(queue);
+
+      if (list.length === 0) {
+        audioRef.current?.pause();
+        setPlayingState(false);
+        setSessionActive(false);
+        setError(
+          queue.kind === "favorites"
+            ? "Favorite a track to build this queue."
+            : "No tracks in this queue.",
+        );
+        return;
+      }
+
+      const selectedTrack =
+        (trackId ? list.find((track) => track.id === trackId) : null) ??
+        list[0];
+      void loadTrack(selectedTrack, true);
+    },
+    [filterTracksForQueue, loadTrack, setPlayingState, setSessionActive],
+  );
+
   const setFavoritesQueue = useCallback((enabled: boolean) => {
-    favoritesOnlyRef.current = enabled;
-    setFavoritesOnlyState(enabled);
+    const nextQueue: PlaybackQueue = enabled
+      ? { kind: "favorites" }
+      : { kind: "all" };
+    playbackQueueRef.current = nextQueue;
+    setPlaybackQueueState(nextQueue);
     if (!enabled) return;
 
     const firstFavorite = tracksRef.current.find((track) =>
@@ -1087,8 +1273,8 @@ export function useAudioLibrary() {
       audioRef.current?.pause();
       setPlayingState(false);
       setSessionActive(false);
-      favoritesOnlyRef.current = false;
-      setFavoritesOnlyState(false);
+      playbackQueueRef.current = { kind: "all" };
+      setPlaybackQueueState({ kind: "all" });
       setProfilePickerOpen(false);
 
       try {
@@ -1152,6 +1338,7 @@ export function useAudioLibrary() {
     resetTimerClock(timerClockRef.current);
     setElapsed(0);
     setSessionActive(false);
+    resetPhaseCueBaseline(timerSettingsRef.current, 0);
     const settings = timerSettingsRef.current;
     if (settings.miniGoals.some((miniGoal) => miniGoal.completed)) {
       const resetSettings = {
@@ -1161,7 +1348,7 @@ export function useAudioLibrary() {
       timerSettingsRef.current = resetSettings;
       setTimerSettings(resetSettings);
     }
-  }, [setSessionActive]);
+  }, [resetPhaseCueBaseline, setSessionActive]);
 
   const updateTimerSettings = useCallback((next: TimerSettings) => {
     const normalized = normalizeTimerSettings(next);
@@ -1184,15 +1371,12 @@ export function useAudioLibrary() {
     if (timerDefinitionChanged) {
       resetTimerClock(timerClockRef.current);
       setElapsed(0);
+      resetPhaseCueBaseline(nextSettings, 0);
       setSessionActive(sessionStartedRef.current || playingRef.current);
     }
-  }, [setSessionActive]);
+  }, [resetPhaseCueBaseline, setSessionActive]);
 
   const timerLabel = formatTimerLabel(elapsed, timerSettings);
-  const timerPhase: TimerPhase | null =
-    timerSettings.kind === "intervals"
-      ? getIntervalPhase(elapsed * 1000, timerSettings).phase
-      : null;
 
   useEffect(() => {
     document.title = `${timerLabel} · FocusFlow`;
@@ -1208,12 +1392,11 @@ export function useAudioLibrary() {
     favoriteTrackIds,
     currentTrackId,
     isPlaying,
-    volume,
+    volume: Math.min(1, Math.max(0, volume * duckingMultiplier)),
     progress,
     duration,
     elapsed,
     timerLabel,
-    timerPhase,
     mode,
     timerSettings,
     timerSettingsOpen,
@@ -1241,6 +1424,7 @@ export function useAudioLibrary() {
     seek,
     setVolume,
     toggleFavorite,
+    playQueue,
     favoritesOnly,
     setFavoritesOnly: setFavoritesQueue,
     remoteSeekRequest,

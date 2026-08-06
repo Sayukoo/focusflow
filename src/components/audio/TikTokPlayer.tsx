@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Track } from "../types";
+import type { Track } from "../../types";
 
 interface TikTokPlayerProps {
   track: Track | null;

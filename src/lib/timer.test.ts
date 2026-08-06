@@ -47,6 +47,9 @@ describe("timer clock", () => {
       breakDurationMinutes: 5,
       goal: "",
       miniGoals: [],
+      phaseSoundEnabled: true,
+      phaseVoiceEnabled: false,
+      voicePack: "system",
     };
     const infinite: TimerSettings = {
       kind: "infinite",
@@ -56,6 +59,9 @@ describe("timer clock", () => {
       breakDurationMinutes: 5,
       goal: "",
       miniGoals: [],
+      phaseSoundEnabled: true,
+      phaseVoiceEnabled: false,
+      voicePack: "system",
     };
 
     expect(timerLimitMs(timer)).toBe(1_500_000);
@@ -77,8 +83,22 @@ describe("timer clock", () => {
       workDurationMinutes: 30,
       breakDurationMinutes: 5,
       goal: "Draft the outline for tomorrow",
+      userAboutMe: "",
       miniGoals: [],
+      phaseSoundEnabled: true,
+      phaseVoiceEnabled: true,
+      voicePack: "calm-female",
     });
+  });
+
+  it("normalizes and retains userAboutMe context", () => {
+    const normalized = normalizeTimerSettings({
+      kind: "intervals",
+      durationMinutes: 25,
+      userAboutMe: "  Senior   Developer. React & Node.js  ",
+    });
+
+    expect(normalized.userAboutMe).toBe("Senior Developer. React & Node.js");
   });
 
   it("falls back to goal-free infinite mode for invalid finite storage", () => {
@@ -130,6 +150,9 @@ describe("timer clock", () => {
       breakDurationMinutes: 5,
       goal: "",
       miniGoals: [],
+      phaseSoundEnabled: true,
+      phaseVoiceEnabled: false,
+      voicePack: "system",
     };
 
     expect(intervalDurationsMs(settings)).toEqual({
@@ -155,5 +178,44 @@ describe("timer clock", () => {
       cycleIndex: 1,
     });
     expect(timerLimitMs(settings)).toBeNull();
+  });
+
+  it("preserves cue toggles and defaults missing cue fields", () => {
+    expect(
+      normalizeTimerSettings({
+        kind: "intervals",
+        durationMinutes: 25,
+        goal: "Stay focused",
+        phaseSoundEnabled: false,
+        phaseVoiceEnabled: true,
+        voicePack: "calm-female",
+      }),
+    ).toMatchObject({
+      phaseSoundEnabled: false,
+      phaseVoiceEnabled: true,
+      voicePack: "calm-female",
+    });
+    expect(
+      normalizeTimerSettings({
+        kind: "timer",
+        durationMinutes: 45,
+        goal: "Stay focused",
+      }),
+    ).toMatchObject({
+      phaseSoundEnabled: true,
+      phaseVoiceEnabled: true,
+      voicePack: "calm-female",
+    });
+    expect(
+      normalizeTimerSettings({
+        kind: "intervals",
+        durationMinutes: 25,
+        phaseVoiceEnabled: false,
+        voicePack: "system",
+      }),
+    ).toMatchObject({
+      phaseVoiceEnabled: true,
+      voicePack: "calm-female",
+    });
   });
 });
