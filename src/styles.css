@@ -91,53 +91,129 @@ button {
   transition: background 420ms ease;
 }
 
-.focus-thumbnail-atmosphere {
+/* ─────────────────────────────────────────────────────────
+   THUMBNAIL BACKGROUND  — animated, multi-layer blur backdrop
+   ───────────────────────────────────────────────────────── */
+
+.thumbnail-bg {
   position: absolute;
-  inset: -8%;
+  inset: 0;
   z-index: 0;
-  opacity: 0.25;
-  background-position: center;
-  background-size: cover;
-  filter: blur(42px) saturate(1.35);
-  transform: scale(1.08) translateZ(0);
+  overflow: hidden;
   contain: paint;
   pointer-events: none;
-  transition: opacity 420ms ease;
 }
 
-.focus-thumbnail-atmosphere--previous {
-  opacity: 0.25;
+/* Crossfade layers */
+.thumbnail-bg__layer {
+  position: absolute;
+  inset: 0;
 }
 
-.focus-thumbnail-atmosphere--current {
-  opacity: 0.25;
+.thumbnail-bg__layer--in {
+  animation: tbg-fadein 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-.focus-thumbnail-atmosphere--current.is-entering {
-  animation: thumbnail-fade-in 420ms ease forwards;
+.thumbnail-bg__layer--out {
+  animation: tbg-fadeout 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-.focus-thumbnail-atmosphere--previous.is-fading {
-  animation: thumbnail-fade-out 420ms ease forwards;
+@keyframes tbg-fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-@keyframes thumbnail-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.25;
-  }
+@keyframes tbg-fadeout {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
-@keyframes thumbnail-fade-out {
-  from {
-    opacity: 0.25;
-  }
-  to {
-    opacity: 0;
-  }
+/* Shared image layer base */
+.thumbnail-bg__img {
+  position: absolute;
+  inset: -14%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  will-change: transform;
 }
+
+/* FAR — heavily blurred, cool-tinted, slow drift */
+.thumbnail-bg__img--far {
+  filter: blur(60px) saturate(1.2) hue-rotate(15deg) brightness(0.45);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  animation: tbg-drift-far 22s ease-in-out alternate infinite;
+}
+
+/* MID — medium blur, warm tones, different drift axis */
+.thumbnail-bg__img--mid {
+  filter: blur(36px) saturate(1.8) hue-rotate(-8deg) brightness(0.38);
+  opacity: 0.48;
+  mix-blend-mode: screen;
+  animation: tbg-drift-mid 17s ease-in-out alternate infinite;
+}
+
+/* NEAR — lightest blur, most chromatic, breathing */
+.thumbnail-bg__img--near {
+  filter: blur(20px) saturate(2.2) brightness(0.28);
+  opacity: 0.42;
+  mix-blend-mode: screen;
+  animation: tbg-drift-near 14s ease-in-out alternate infinite, tbg-breathe 6s ease-in-out infinite;
+}
+
+/* Breathing intensifies when playing */
+.thumbnail-bg.is-playing .thumbnail-bg__img--near {
+  animation: tbg-drift-near 14s ease-in-out alternate infinite, tbg-breathe-playing 4s ease-in-out infinite;
+}
+
+.thumbnail-bg.is-playing .thumbnail-bg__img--mid {
+  filter: blur(32px) saturate(2.2) hue-rotate(-8deg) brightness(0.44);
+  opacity: 0.54;
+}
+
+.thumbnail-bg.is-playing .thumbnail-bg__img--far {
+  filter: blur(55px) saturate(1.5) hue-rotate(15deg) brightness(0.52);
+  opacity: 0.62;
+}
+
+/* Drift animations — each layer moves on a different axis */
+@keyframes tbg-drift-far {
+  from { transform: scale(1.06) translate(0, 0) rotate(0deg); }
+  to   { transform: scale(1.12) translate(-2%, 1.5%) rotate(1.5deg); }
+}
+
+@keyframes tbg-drift-mid {
+  from { transform: scale(1.08) translate(0, 0) rotate(0deg); }
+  to   { transform: scale(1.14) translate(2.5%, -1%) rotate(-1deg); }
+}
+
+@keyframes tbg-drift-near {
+  from { transform: scale(1.10) translate(0, 0) rotate(0deg); }
+  to   { transform: scale(1.16) translate(1.5%, 2%) rotate(0.5deg); }
+}
+
+/* Breathing — subtle scale pulse when idle */
+@keyframes tbg-breathe {
+  0%, 100% { opacity: 0.38; }
+  50%       { opacity: 0.46; }
+}
+
+/* Breathing — stronger when playing */
+@keyframes tbg-breathe-playing {
+  0%, 100% { opacity: 0.42; filter: blur(20px) saturate(2.4) brightness(0.30); }
+  50%       { opacity: 0.52; filter: blur(18px) saturate(2.8) brightness(0.34); }
+}
+
+/* Permanent dark veil keeps content readable over any thumbnail */
+.thumbnail-bg__overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 55%, transparent 20%, rgba(4, 5, 10, 0.72) 80%),
+    linear-gradient(to bottom, rgba(4, 5, 10, 0.55) 0%, transparent 25%, transparent 72%, rgba(4, 5, 10, 0.80) 100%);
+}
+
 
 .focus-shell.is-browser .transport-strip,
 .focus-shell.is-browser .timer-settings-backdrop {

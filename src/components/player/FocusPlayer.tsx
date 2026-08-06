@@ -24,6 +24,7 @@ import { TimerSettings as TimerSettingsModal } from "../settings/TimerSettings";
 import { RemotePlayer } from "../audio/RemotePlayer";
 import { PlaybackControls } from "./PlaybackControls";
 import { HeaderControls } from "./HeaderControls";
+import { ThumbnailBackground } from "./ThumbnailBackground";
 
 interface FocusPlayerProps {
   tracks: Track[];
@@ -359,6 +360,10 @@ export function FocusPlayer({
 
   return (
     <div className={shellClasses}>
+      <ThumbnailBackground
+        thumbnail={currentTrack?.thumbnail}
+        isPlaying={isPlaying}
+      />
       <div className="focus-atmosphere" aria-hidden="true" />
       <div className="focus-vignette" aria-hidden="true" />
 
