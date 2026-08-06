@@ -195,7 +195,7 @@ export const MusicLibrary = memo(function MusicLibrary({
         <header className="library-header">
           <div className="library-heading">
             <span className="library-glyph" aria-hidden="true">
-              <Icon name="folder-open" size={22} />
+              <Icon name="music-library" size={22} />
             </span>
             <div>
               <strong className="library-title">{activeProfileName}</strong>

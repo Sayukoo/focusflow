@@ -12,6 +12,7 @@ export type IconName =
   | "infinity"
   | "intervals"
   | "library"
+  | "music-library"
   | "link"
   | "menu"
   | "more"
@@ -88,6 +89,15 @@ const icons: Record<IconName, ReactElement> = {
       <path d="m14.1 5 3.9-1v15l-3.9 1Z" />
     </>
   ),
+  "music-library": (
+    <>
+      <path d="M3.5 8.3a2 2 0 0 1 2-2h4.1l1.8 1.8h7.1a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2Z" />
+      <path d="M4 10.5h16" />
+      <path d="M14.2 12.2v4.1l3.4-.8v-4.1Z" />
+      <circle cx="12.8" cy="16.8" r="1.25" />
+      <circle cx="16.2" cy="16" r="1.25" />
+    </>
+  ),
   link: (
     <>
       <path d="m9.5 14.5 5-5" />
@@ -141,8 +151,9 @@ const icons: Record<IconName, ReactElement> = {
   play: <path d="M7 4.5v15l12-7.5Z" />,
   pin: (
     <>
-      <path d="M12 17v5" />
-      <path d="M9 4h6l1 5-2 3v5h-4v-5L8 9Z" />
+      <path d="M8.4 4.5h7.2l-.8 4.1 2.8 2.8v1.6H6.4v-1.6l2.8-2.8Z" />
+      <path d="M12 13v7.6" />
+      <path d="m9.6 20.6 2.4-2.4 2.4 2.4" />
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,

@@ -46,11 +46,11 @@ export function HeaderControls({
       <KaTeXTooltip formula="\text{Music library}">
         <button
           type="button"
-          className="icon-btn ghost"
+          className="icon-btn ghost music-library-btn"
           aria-label="Open music library"
           onClick={() => onToggleLibrary(true)}
         >
-          <Icon name="folder-open" size={18} />
+          <Icon name="music-library" size={18} />
         </button>
       </KaTeXTooltip>
 
