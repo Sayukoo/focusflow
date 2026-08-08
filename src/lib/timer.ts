@@ -6,8 +6,7 @@ import {
 } from "../types";
 
 const MAX_TIMER_MINUTES = 24 * 60;
-const MAX_GOAL_LENGTH = 160;
-const MAX_MINI_GOAL_LENGTH = 120;
+const MAX_GOAL_LENGTH = 300;
 const MAX_MINI_GOALS = 5;
 
 export interface TimerClock {
@@ -83,10 +82,7 @@ export function normalizeUserAboutMe(value: unknown): string {
 
 export function normalizeMiniGoalText(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_MINI_GOAL_LENGTH);
+  return value.replace(/\s+/g, " ").trim();
 }
 
 export function createMiniGoals(values: readonly string[]): MiniGoal[] {
@@ -99,6 +95,15 @@ export function resetMiniGoalProgress(miniGoals: readonly MiniGoal[]): MiniGoal[
     completed: false,
   }));
 }
+
+export const DEFAULT_BREAK_MINI_GOALS: MiniGoal[] = [
+  { id: "break-1", text: "🫁 Oddychaj pudełkowo (4-4-4-4)", completed: false },
+  { id: "break-2", text: "💧 Wypij szklankę wody", completed: false },
+  { id: "break-3", text: "🪴 Wyjdź na balkon lub wyjrzyj przez okno", completed: false },
+  { id: "break-4", text: "🧹 Posprzątaj biurko lub pokój", completed: false },
+  { id: "break-5", text: "🧘 Rozciągnij kark, ramiona i plecy", completed: false },
+  { id: "break-6", text: "💪 Zrób 10 pompek", completed: false },
+];
 
 export function normalizeTimerSettings(value: unknown): TimerSettings {
   const candidate =
@@ -147,6 +152,7 @@ export function normalizeTimerSettings(value: unknown): TimerSettings {
     goal: kind === "infinite" ? "" : goal,
     userAboutMe,
     miniGoals: kind === "infinite" ? [] : normalizeMiniGoals(candidate.miniGoals),
+    breakMiniGoals: normalizeMiniGoals(candidate.breakMiniGoals),
     phaseSoundEnabled:
       typeof candidate.phaseSoundEnabled === "boolean"
         ? candidate.phaseSoundEnabled
@@ -159,6 +165,10 @@ export function normalizeTimerSettings(value: unknown): TimerSettings {
       candidate.voicePack === "calm-female"
         ? candidate.voicePack
         : DEFAULT_TIMER_SETTINGS.voicePack,
+    discordRpcEnabled:
+      typeof candidate.discordRpcEnabled === "boolean"
+        ? candidate.discordRpcEnabled
+        : DEFAULT_TIMER_SETTINGS.discordRpcEnabled,
   };
 }
 
@@ -255,10 +265,16 @@ function normalizeMiniGoals(value: unknown): MiniGoal[] {
     }
     usedIds.add(id);
 
+    const rawSubGoals = Array.isArray(candidate?.subGoals)
+      ? candidate.subGoals
+      : undefined;
+    const subGoals = rawSubGoals ? normalizeMiniGoals(rawSubGoals) : undefined;
+
     miniGoals.push({
       id,
       text,
       completed: candidate?.completed === true,
+      ...(subGoals && subGoals.length > 0 ? { subGoals } : {}),
     });
 
     if (miniGoals.length >= MAX_MINI_GOALS) break;

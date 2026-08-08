@@ -6,6 +6,7 @@ import {
   elapsedSecondsFromMs,
   getIntervalPhase,
   intervalDurationsMs,
+  normalizeMiniGoalText,
   normalizeTimerSettings,
   pauseTimerClock,
   readTimerElapsedMs,
@@ -50,6 +51,7 @@ describe("timer clock", () => {
       phaseSoundEnabled: true,
       phaseVoiceEnabled: false,
       voicePack: "system",
+      discordRpcEnabled: true,
     };
     const infinite: TimerSettings = {
       kind: "infinite",
@@ -62,6 +64,7 @@ describe("timer clock", () => {
       phaseSoundEnabled: true,
       phaseVoiceEnabled: false,
       voicePack: "system",
+      discordRpcEnabled: true,
     };
 
     expect(timerLimitMs(timer)).toBe(1_500_000);
@@ -85,9 +88,11 @@ describe("timer clock", () => {
       goal: "Draft the outline for tomorrow",
       userAboutMe: "",
       miniGoals: [],
+      breakMiniGoals: [],
       phaseSoundEnabled: true,
       phaseVoiceEnabled: true,
       voicePack: "calm-female",
+      discordRpcEnabled: true,
     });
   });
 
@@ -99,6 +104,14 @@ describe("timer clock", () => {
     });
 
     expect(normalized.userAboutMe).toBe("Senior Developer. React & Node.js");
+  });
+
+  it("preserves long mini-goal text without truncation", () => {
+    const longText =
+      "Wybierz jeden temat, który autentycznie Cię ciekawi (nie musi być idealnie naukowy, wystarczy, że jest dla Ciebie fascynujący i zachęca do dalszego researchu).";
+
+    expect(normalizeMiniGoalText(longText)).toBe(longText);
+    expect(createMiniGoals([longText])[0]?.text).toBe(longText);
   });
 
   it("falls back to goal-free infinite mode for invalid finite storage", () => {
@@ -153,6 +166,7 @@ describe("timer clock", () => {
       phaseSoundEnabled: true,
       phaseVoiceEnabled: false,
       voicePack: "system",
+      discordRpcEnabled: true,
     };
 
     expect(intervalDurationsMs(settings)).toEqual({

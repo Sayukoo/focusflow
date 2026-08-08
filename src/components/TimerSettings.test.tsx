@@ -99,14 +99,14 @@ describe("TimerSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate mini goals" }));
     await waitFor(() =>
       expect(
-        screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+        screen.getByRole("checkbox", { name: "Mark subtask 1 complete" }),
       ).toBeVisible(),
     );
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+      screen.getByRole("checkbox", { name: "Mark subtask 1 complete" }),
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Mini goal 1" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Subtask 1" }), {
       target: { value: "Review the document" },
     });
     expect(onChange).not.toHaveBeenCalled();

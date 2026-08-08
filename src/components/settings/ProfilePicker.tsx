@@ -1,7 +1,14 @@
-import { memo, useEffect, useState, type FormEvent } from "react";
+import { memo, useState, type FormEvent } from "react";
 import type { MusicProfile } from "../../lib/profiles";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
+
+export interface FocusAnalyticsSummary {
+  todaySummary: string;
+  streakDays: number;
+  todaySeconds: number;
+  todaySessions: number;
+}
 
 interface ProfilePickerProps {
   open: boolean;
@@ -29,11 +36,6 @@ export const ProfilePicker = memo(function ProfilePicker({
   const [name, setName] = useState("");
   const [draftAboutMe, setDraftAboutMe] = useState(userAboutMe ?? "");
   const [justSaved, setJustSaved] = useState(false);
-
-  useEffect(() => {
-    setDraftAboutMe(userAboutMe ?? "");
-  }, [userAboutMe]);
-
   if (!open) return null;
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {

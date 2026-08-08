@@ -67,7 +67,7 @@ export const TimerSettings = memo(function TimerSettings({
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const shouldReduceMotion = useReducedMotion() ?? false;
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const goalInputRef = useRef<HTMLInputElement | null>(null);
+  const goalInputRef = useRef<HTMLTextAreaElement | null>(null);
   const miniGoalsRequestRef = useRef<AbortController | null>(null);
   const miniGoalsRequestIdRef = useRef(0);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -799,11 +799,11 @@ export const TimerSettings = memo(function TimerSettings({
                   ) : null}
                 </div>
                 <div className="timer-goal-input-wrap">
-                  <input
+                  <textarea
                     ref={goalInputRef}
                     id="timer-work-goal"
-                    type="text"
-                    maxLength={160}
+                    rows={3}
+                    maxLength={300}
                     placeholder="Required for finite mode"
                     value={goalDraft}
                     aria-label={
@@ -825,14 +825,14 @@ export const TimerSettings = memo(function TimerSettings({
                       if (nextGoal.trim()) setGoalError("");
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") {
+                      if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
                         commitGoalDraft();
                       }
                     }}
                     onBlur={commitGoalDraft}
                   />
-                  <span aria-hidden="true">{goalDraft.length}/160</span>
+                  <span aria-hidden="true">{goalDraft.length}/300</span>
                 </div>
                 {goalError ? (
                   <p id="timer-goal-error" className="timer-goal-error" role="alert">
@@ -888,6 +888,9 @@ export const TimerSettings = memo(function TimerSettings({
                     </div>
                     <MiniGoalChecklist
                       items={miniGoals}
+                      mainGoal={goalDraft}
+                      userAboutMe={settings.userAboutMe}
+                      workDurationMinutes={settings.workDurationMinutes}
                       label="Mini goals"
                       onChange={handleDraftMiniGoalsChange}
                     />

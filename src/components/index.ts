@@ -2,6 +2,8 @@
 export { Icon } from "./ui/Icon";
 export { KaTeXTooltip } from "./ui/KaTeXTooltip";
 export { MobileMenu } from "./ui/MobileMenu";
+export { HotkeysModal } from "./ui/HotkeysModal";
+export { KeyboardShortcutsModal } from "./ui/KeyboardShortcutsModal";
 
 // Audio & Remote Players
 export { RemotePlayer } from "./audio/RemotePlayer";

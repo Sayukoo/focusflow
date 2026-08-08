@@ -32,17 +32,18 @@ describe("MiniGoalChecklist", () => {
       screen.getByRole("list", { name: "Session mini goals" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+      screen.getByRole("checkbox", { name: "Mark subtask 1 complete" }),
     ).not.toBeChecked();
     expect(
-      screen.getByRole("checkbox", { name: "Mark mini goal 2 complete" }),
+      screen.getByRole("checkbox", { name: "Mark subtask 2 complete" }),
     ).toBeChecked();
 
-    const firstInput = screen.getByRole("textbox", { name: "Mini goal 1" });
+    const firstInput = screen.getByRole("textbox", { name: "Subtask 1" });
     expect(firstInput).toHaveValue("Open the document");
+    expect(firstInput).toBeInstanceOf(HTMLInputElement);
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+      screen.getByRole("checkbox", { name: "Mark subtask 1 complete" }),
     );
     expect(onChange).toHaveBeenLastCalledWith([
       { ...items[0], completed: true },
@@ -55,6 +56,42 @@ describe("MiniGoalChecklist", () => {
     expect(onChange).toHaveBeenLastCalledWith([
       { ...items[0], text: "Review the document" },
       items[1],
+    ]);
+  });
+
+  it("renders and toggles sub-subtasks", () => {
+    const onChange = vi.fn();
+    const itemsWithSub: MiniGoal[] = [
+      {
+        id: "mini-1",
+        text: "Complex Task",
+        completed: false,
+        subGoals: [
+          { id: "sub-1", text: "Sub-step A", completed: false },
+          { id: "sub-2", text: "Sub-step B", completed: false },
+        ],
+      },
+    ];
+
+    render(
+      <MiniGoalChecklist
+        items={itemsWithSub}
+        label="Session subtasks"
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Sub-task 1" })).toHaveValue("Sub-step A");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark sub-task 1 complete" }));
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "mini-1",
+        subGoals: [
+          { id: "sub-1", text: "Sub-step A", completed: true },
+          { id: "sub-2", text: "Sub-step B", completed: false },
+        ],
+      }),
     ]);
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  breakdownSubGoalDetailed,
   categorizeTrack,
   categorizeTrackWithStatus,
   generateMiniGoals,
@@ -111,6 +112,34 @@ describe("Gemini mini-goals", () => {
     );
   });
 
+  it("preserves the complete text of a generated mini-goal", async () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
+    const longMiniGoal =
+      "Wybierz jeden temat, który autentycznie Cię ciekawi (nie musi być idealnie naukowy, wystarczy, że jest dla Ciebie fascynujący i zachęca do dalszego researchu).";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({ miniGoals: [longMiniGoal] }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(generateMiniGoals("Prepare a research plan")).resolves.toEqual([
+      longMiniGoal,
+    ]);
+  });
+
   it("includes userAboutMe background prompt in Gemini request body", async () => {
     vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -200,6 +229,65 @@ describe("Gemini mini-goals", () => {
         body: expect.stringContaining(
           "Clarification answer: Start with the onboarding flow",
         ),
+      }),
+    );
+  });
+
+  it("breaks down a large subtask into sub-subtasks with full session context", async () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      subGoals: ["Krok 1: Otwórz plik", "Krok 2: Napisz wstęp"],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await breakdownSubGoalDetailed(
+      { id: "sub-1", text: "Napisz całą dokumentację", completed: false },
+      "Stwórz nową aplikację FocusFlow",
+      [
+        { id: "sub-1", text: "Napisz całą dokumentację", completed: false },
+        { id: "sub-2", text: "Zrobić testy", completed: true },
+      ],
+      {
+        kind: "timer",
+        workDurationMinutes: 25,
+        breakDurationMinutes: null,
+        userAboutMe: "Programista z tendencją do prokrastynacji",
+      },
+    );
+
+    expect(result.subGoals).toEqual(["Krok 1: Otwórz plik", "Krok 2: Napisz wstęp"]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.stringContaining("Main Work Goal:"),
+      }),
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.stringContaining("Target Subtask to break down:"),
+      }),
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.stringContaining("Programista z tendencją do prokrastynacji"),
       }),
     );
   });

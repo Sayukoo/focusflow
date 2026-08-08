@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fetchRemotePlaylistTracks,
   findTrackIndex,
   formatClock,
   formatRemaining,
@@ -148,11 +149,26 @@ describe("parseYouTubeVideoId", () => {
 });
 
 describe("parseRemoteLink", () => {
-  it("recognizes Spotify and SoundCloud links", () => {
+  it("recognizes Spotify, YouTube playlist, and SoundCloud links", () => {
     expect(parseRemoteLink("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")).toMatchObject({
       provider: "spotify",
       providerId: "4uLU6hMCjMI75M1A2tKUQC",
       providerKind: "track",
+    });
+    expect(parseRemoteLink("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")).toMatchObject({
+      provider: "spotify",
+      providerId: "37i9dQZF1DXcBWIGoYBM5M",
+      providerKind: "playlist",
+    });
+    expect(parseRemoteLink("https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy")).toMatchObject({
+      provider: "spotify",
+      providerId: "4aawyAB9vmqN3uQ7FjRGTy",
+      providerKind: "album",
+    });
+    expect(parseRemoteLink("https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj")).toMatchObject({
+      provider: "youtube",
+      providerId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+      providerKind: "playlist",
     });
     expect(parseRemoteLink("https://open.spotify.com/intl-pl/track/4uLU6hMCjMI75M1A2tKUQC")).toMatchObject({
       provider: "spotify",
@@ -219,5 +235,14 @@ describe("timer snapshot persistence", () => {
     });
 
     expect(loadPlayerSnapshot().timerSettings).toEqual(timerSettings);
+  });
+});
+
+describe("fetchRemotePlaylistTracks", () => {
+  it("returns empty array for non-playlist links", async () => {
+    const parsed = parseRemoteLink("https://soundcloud.com/artist/track");
+    if (!parsed) throw new Error("Expected parsed link");
+    const tracks = await fetchRemotePlaylistTracks("https://soundcloud.com/artist/track", parsed);
+    expect(tracks).toEqual([]);
   });
 });

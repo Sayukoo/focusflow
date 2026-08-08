@@ -1,4 +1,4 @@
-import type { Track } from "../types";
+import type { MiniGoal, Track } from "../types";
 
 export const TRACK_CATEGORIES = [
   "AMBIENT",
@@ -366,7 +366,7 @@ export async function generateMiniGoalsDetailed(
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 280,
+            maxOutputTokens: 512,
             responseMimeType: "application/json",
             responseSchema: {
               type: "OBJECT",
@@ -431,6 +431,117 @@ export async function generateMiniGoalsDetailed(
   }
 }
 
+export interface BreakdownSubGoalResult {
+  subGoals: string[];
+}
+
+export async function breakdownSubGoalDetailed(
+  targetSubGoal: MiniGoal,
+  mainGoal: string,
+  allSubGoals: MiniGoal[],
+  context: MiniGoalContext,
+  signal?: AbortSignal,
+): Promise<BreakdownSubGoalResult> {
+  const cleanTarget = targetSubGoal.text.replace(/\s+/g, " ").trim();
+  const cleanMainGoal = mainGoal.replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!cleanTarget || !hasGeminiConfiguration()) return { subGoals: [] };
+  if (signal?.aborted) {
+    throw new DOMException("Sub-goal breakdown request was cancelled.", "AbortError");
+  }
+
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
+  if (!apiKey) return { subGoals: [] };
+
+  const model =
+    import.meta.env.VITE_GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+
+  const cleanUserAboutMe = context.userAboutMe
+    ? context.userAboutMe.replace(/\s+/g, " ").trim().slice(0, 4000)
+    : "";
+
+  const allSubGoalsSummary = allSubGoals.map(
+    (item) => `  - [${item.completed ? "x" : " "}] ${item.text}`,
+  );
+
+  const prompt = [
+    "The user feels the target subtask is too large or daunting and needs it broken down into 2 to 4 smaller, step-by-step sub-sub tasks ('subGoals').",
+    "Each sub-sub task must be super concrete, low-friction, start with an action verb, and be doable in a few minutes.",
+    "If the input or main goal is in Polish, write the subGoals in Polish.",
+    "CRITICAL MANDATE FOR USER BACKGROUND / ABOUT ME:",
+    "- The 'User background / About me' field provides psychological context, personal persona, role nuances, anxieties, or preferences.",
+    "- Use this context to frame the sub-sub tasks with minimal resistance, high comfort, and absolute clarity.",
+    "ALL CONTEXT OF THE CURRENT SESSION:",
+    `Main Work Goal: "${cleanMainGoal || "none"}"`,
+    "All Current Subtasks & Status:",
+    ...allSubGoalsSummary,
+    `Target Subtask to break down: "${cleanTarget}"`,
+    `Selected work duration: ${context.workDurationMinutes} minutes`,
+    `User background / About me (psychological context & memory): ${cleanUserAboutMe || "none"}`,
+    "",
+    "Return JSON only in the form {\"subGoals\":[\"...\"]}.",
+  ].join("\n");
+
+  const controller = new AbortController();
+  const abortExternal = () => controller.abort();
+  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  signal?.addEventListener("abort", abortExternal, { once: true });
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 384,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                subGoals: {
+                  type: "ARRAY",
+                  items: { type: "STRING" },
+                },
+              },
+              required: ["subGoals"],
+            },
+            temperature: 0.25,
+          },
+        }),
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) {
+      throw new GeminiRequestError(`Gemini request failed (${response.status}).`);
+    }
+    const payload = (await response.json()) as GeminiGenerateResponse;
+    const text = payload.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text ?? "")
+      .join("")
+      .trim();
+    if (!text) return { subGoals: [] };
+
+    const parsed = JSON.parse(stripMarkdownFence(text)) as {
+      subGoals?: unknown;
+    };
+    const subGoals = normalizeMiniGoals(parsed.subGoals);
+    return { subGoals };
+  } catch (error) {
+    if (controller.signal.aborted) throw error;
+    if (error instanceof GeminiRequestError) throw error;
+    throw new GeminiRequestError("Gemini sub-goal breakdown is unavailable.");
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortExternal);
+  }
+}
+
 function isTrackCategory(value: string): value is TrackCategory {
   return TRACK_CATEGORIES.includes(value as TrackCategory);
 }
@@ -444,7 +555,7 @@ function normalizeMiniGoals(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is string => typeof item === "string")
-    .map((item) => item.replace(/\s+/g, " ").trim().slice(0, 120))
+    .map((item) => item.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 5);
 }

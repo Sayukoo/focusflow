@@ -273,7 +273,19 @@ function cleanNativeReleaseArtifacts() {
   console.log(
     `  Cleaning generated native release artifacts: ${manifestPath(targetRelease)}`,
   );
-  rmSync(targetRelease, { force: true, recursive: true });
+  try {
+    rmSync(targetRelease, { force: true, recursive: true });
+  } catch (error) {
+    if (
+      process.platform !== "win32" ||
+      !["EACCES", "EBUSY", "EPERM"].includes(error?.code)
+    ) {
+      throw error;
+    }
+    console.warn(
+      `  ⚠ Preserving locked native release artifacts: ${error?.message ?? error}`,
+    );
+  }
 }
 
 function clearGeneratedIconOutputs() {
@@ -503,6 +515,17 @@ function validateIconBundle() {
 function regenerateIcons() {
   if (!existsSync(iconSource)) {
     throw new Error(`FocusFlow SVG icon source not found: ${iconSource}`);
+  }
+
+  const force = process.argv.includes("--force-icons");
+  if (!force) {
+    try {
+      const existing = validateIconBundle();
+      console.log("  ✓ Using existing verified icon bundle (pass --force-icons to force regeneration)");
+      return existing;
+    } catch {
+      // Icons missing or invalid, generate them below
+    }
   }
 
   clearGeneratedIconOutputs();
@@ -774,8 +797,7 @@ function buildPortableWindowsExe(iconVerification) {
   }
 
   const targetRelease = nativeReleaseDirectory();
-  cleanNativeReleaseArtifacts();
-  const buildStartedAt = Date.now();
+  const buildStartedAt = Date.now() - 2000;
 
   runTauri("Build portable Windows executable", [
     "build",

@@ -129,6 +129,23 @@ export function parseYouTubeVideoId(value: string): string | null {
   }
 }
 
+export function parseYouTubePlaylistId(value: string): string | null {
+  try {
+    const url = toWebUrl(value);
+    if (!url) return null;
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be") {
+      const list = url.searchParams.get("list");
+      if (list && /^[\w-]+$/.test(list)) {
+        return list;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ParsedRemoteLink {
   provider: RemoteProvider;
   providerId: string;
@@ -139,6 +156,16 @@ export interface ParsedRemoteLink {
 export function parseRemoteLink(value: string): ParsedRemoteLink | null {
   const url = toWebUrl(value);
   if (!url) return null;
+
+  const ytPlaylistId = parseYouTubePlaylistId(value);
+  if (ytPlaylistId) {
+    return {
+      provider: "youtube",
+      providerId: ytPlaylistId,
+      providerKind: "playlist",
+      url: url.toString(),
+    };
+  }
 
   const youtubeId = parseYouTubeVideoId(value);
   if (youtubeId) {
@@ -333,6 +360,239 @@ export async function fetchRemoteMetadata(
   } catch {
     return fallback;
   }
+}
+
+export async function fetchYouTubePlaylistTracks(
+  playlistId: string,
+): Promise<Track[]> {
+  const playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+  try {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    let html = "";
+    try {
+      const response = await fetch(playlistUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) return [];
+      html = await response.text();
+    } finally {
+      window.clearTimeout(timeout);
+    }
+
+    const items: Array<{
+      videoId: string;
+      title: string;
+      author?: string;
+      thumbnail?: string;
+    }> = [];
+
+    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s);
+    if (match) {
+      try {
+        const data = JSON.parse(match[1]) as Record<string, unknown>;
+
+        function walk(obj: unknown) {
+          if (!obj || typeof obj !== "object") return;
+          const rec = obj as Record<string, unknown>;
+
+          if (rec.playlistVideoRenderer && typeof rec.playlistVideoRenderer === "object") {
+            const v = rec.playlistVideoRenderer as {
+              videoId?: string;
+              title?: { runs?: Array<{ text?: string }>; simpleText?: string };
+              shortBylineText?: { runs?: Array<{ text?: string }> };
+              ownerText?: { runs?: Array<{ text?: string }> };
+              thumbnail?: { thumbnails?: Array<{ url?: string }> };
+            };
+            if (v.videoId && !items.some((item) => item.videoId === v.videoId)) {
+              const title =
+                v.title?.runs?.[0]?.text || v.title?.simpleText || `YouTube · ${v.videoId}`;
+              const author =
+                v.shortBylineText?.runs?.[0]?.text || v.ownerText?.runs?.[0]?.text || "YouTube";
+              const thumbnail =
+                v.thumbnail?.thumbnails?.slice(-1)[0]?.url || youtubeThumbnail(v.videoId);
+              items.push({ videoId: v.videoId, title, author, thumbnail });
+            }
+          }
+
+          if (rec.lockupViewModel && typeof rec.lockupViewModel === "object") {
+            const lockup = rec.lockupViewModel as {
+              contentId?: string;
+              contentType?: string;
+              metadata?: { lockupMetadataViewModel?: { title?: { content?: string } } };
+              rendererContext?: { accessibilityContext?: { label?: string } };
+            };
+            if (
+              lockup.contentId &&
+              lockup.contentType === "LOCKUP_CONTENT_TYPE_VIDEO" &&
+              !items.some((item) => item.videoId === lockup.contentId)
+            ) {
+              const videoId = lockup.contentId;
+              const metaTitle = lockup.metadata?.lockupMetadataViewModel?.title?.content;
+              const labelTitle = lockup.rendererContext?.accessibilityContext?.label;
+              const title =
+                metaTitle || (labelTitle ? labelTitle.split(" by ")[0] : `YouTube · ${videoId}`);
+              const thumbnail = youtubeThumbnail(videoId);
+              items.push({ videoId, title, author: "YouTube", thumbnail });
+            }
+          }
+
+          for (const key of Object.keys(rec)) {
+            walk(rec[key]);
+          }
+        }
+
+        walk(data);
+      } catch {
+        // fallback to regex extraction
+      }
+    }
+
+    if (items.length === 0) {
+      const watchMatches = [
+        ...html.matchAll(/\/watch\?v=([a-zA-Z0-9_-]{11})/g),
+      ].map((m) => m[1]);
+      const uniqueIds = [...new Set(watchMatches)];
+      for (const videoId of uniqueIds) {
+        items.push({
+          videoId,
+          title: `YouTube · ${videoId}`,
+          thumbnail: youtubeThumbnail(videoId),
+          author: "YouTube",
+        });
+      }
+    }
+
+    return items.map((item) => {
+      const trackUrl = `https://www.youtube.com/watch?v=${item.videoId}`;
+      return {
+        id: `youtube:${item.videoId}`,
+        title: item.title,
+        filename: item.title,
+        path: trackUrl,
+        extension: "youtube",
+        source: "youtube" as const,
+        url: trackUrl,
+        videoId: item.videoId,
+        providerId: item.videoId,
+        providerKind: "video",
+        thumbnail: item.thumbnail || youtubeThumbnail(item.videoId),
+        author: item.author,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSpotifyPlaylistTracks(
+  url: string,
+  _link: ParsedRemoteLink,
+): Promise<Track[]> {
+  const embedUrl = url.replace("open.spotify.com/", "open.spotify.com/embed/");
+  try {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    let html = "";
+    try {
+      const response = await fetch(embedUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) return [];
+      html = await response.text();
+    } finally {
+      window.clearTimeout(timeout);
+    }
+
+    const match = html.match(
+      /<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s,
+    );
+    if (!match) return [];
+
+    const json = JSON.parse(match[1]) as Record<string, unknown>;
+    const props = (json?.props as Record<string, unknown>)?.pageProps as Record<string, unknown>;
+    const state = props?.state as Record<string, unknown>;
+    const data = state?.data as Record<string, unknown>;
+    const entity = data?.entity as {
+      title?: string;
+      name?: string;
+      subtitle?: string;
+      trackList?: Array<{
+        uri?: string;
+        uid?: string;
+        id?: string;
+        title?: string;
+        name?: string;
+        subtitle?: string;
+        artists?: Array<{ name?: string }>;
+      }>;
+      tracks?: Array<{
+        uri?: string;
+        uid?: string;
+        id?: string;
+        title?: string;
+        name?: string;
+        subtitle?: string;
+        artists?: Array<{ name?: string }>;
+      }>;
+    };
+
+    if (!entity) return [];
+    const trackList = entity.trackList || entity.tracks || [];
+
+    return trackList.map((t) => {
+      const spotifyId = t.uri
+        ? t.uri.split(":")[2]
+        : t.id || t.uid || hashRemoteUrl(t.title || t.name || "spotify");
+      const trackUrl = spotifyId ? `https://open.spotify.com/track/${spotifyId}` : url;
+      const title = t.title || t.name || "Spotify · track";
+      const author =
+        t.subtitle ||
+        t.artists?.map((a) => a.name).filter(Boolean).join(", ") ||
+        entity.subtitle ||
+        "Spotify";
+
+      return {
+        id: `spotify:${spotifyId}`,
+        title,
+        filename: title,
+        path: trackUrl,
+        extension: "spotify",
+        source: "spotify" as const,
+        url: trackUrl,
+        providerId: spotifyId,
+        providerKind: "track",
+        author,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchRemotePlaylistTracks(
+  url: string,
+  link: ParsedRemoteLink,
+): Promise<Track[]> {
+  if (link.provider === "youtube" && link.providerKind === "playlist") {
+    return fetchYouTubePlaylistTracks(link.providerId);
+  }
+  if (
+    link.provider === "spotify" &&
+    (link.providerKind === "playlist" || link.providerKind === "album")
+  ) {
+    return fetchSpotifyPlaylistTracks(url, link);
+  }
+  return [];
 }
 
 export function loadRemoteTracks(): Track[] {

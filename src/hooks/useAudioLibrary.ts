@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchRemoteMetadata,
+  fetchRemotePlaylistTracks,
   formatTimerLabel,
   findTrackIndex,
   isSupportedAudioFile,
@@ -42,6 +43,16 @@ import {
   type TimerSettings,
   type Track,
 } from "../types";
+import {
+  addFocusTime,
+  calculateStreak,
+  formatDailyFocusSummary,
+  getTodayStats,
+  loadAnalyticsStore,
+  recordCompletedSession,
+  saveAnalyticsStore,
+  type FocusAnalyticsStore,
+} from "../lib/analytics";
 import {
   addCustomProfile,
   assignTracksToProfile,
@@ -137,6 +148,22 @@ export function useAudioLibrary() {
   const setSessionActive = useCallback((active: boolean) => {
     sessionStartedRef.current = active;
     setSessionStarted(active);
+  }, []);
+
+  const [analyticsStore, setAnalyticsStore] = useState<FocusAnalyticsStore>(() =>
+    loadAnalyticsStore(),
+  );
+  const analyticsStoreRef = useRef<FocusAnalyticsStore>(analyticsStore);
+  const lastAnalyticsTickRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    analyticsStoreRef.current = analyticsStore;
+  }, [analyticsStore]);
+
+  const commitAnalyticsStore = useCallback((next: FocusAnalyticsStore) => {
+    analyticsStoreRef.current = next;
+    setAnalyticsStore(next);
+    saveAnalyticsStore(next);
   }, []);
 
   const commitProfileStore = useCallback((next: ProfileStore) => {
@@ -552,13 +579,46 @@ export function useAudioLibrary() {
         sessionStartedRef.current &&
         (!settings.pauseWhenMusicPaused || playingRef.current);
 
+      const isFocusing = playingRef.current || sessionStartedRef.current;
+
       if (!shouldAdvance) {
         pauseTimerClock(timerClockRef.current, nowMs);
+      } else {
+        startTimerClock(timerClockRef.current, nowMs);
+      }
+
+      if (!isFocusing) {
+        lastAnalyticsTickRef.current = null;
         return;
       }
 
-      startTimerClock(timerClockRef.current, nowMs);
       const elapsedMs = readTimerElapsedMs(timerClockRef.current, nowMs);
+
+      const isWorkPhase =
+        settings.kind !== "intervals" ||
+        getIntervalPhase(elapsedMs, settings).phase === "work";
+
+      if (isWorkPhase) {
+        if (lastAnalyticsTickRef.current !== null) {
+          const diffSec = Math.floor(
+            (nowMs - lastAnalyticsTickRef.current) / 1000,
+          );
+          if (diffSec >= 1) {
+            lastAnalyticsTickRef.current =
+              nowMs - ((nowMs - lastAnalyticsTickRef.current) % 1000);
+            commitAnalyticsStore(
+              addFocusTime(analyticsStoreRef.current, diffSec),
+            );
+          }
+        } else {
+          lastAnalyticsTickRef.current = nowMs;
+        }
+      } else {
+        lastAnalyticsTickRef.current = null;
+      }
+
+      if (!shouldAdvance) return;
+
       const limitMs = timerLimitMs(settings);
 
       if (limitMs !== null && elapsedMs >= limitMs) {
@@ -575,6 +635,9 @@ export function useAudioLibrary() {
             phase: "complete",
             cycleIndex: null,
           };
+          commitAnalyticsStore(
+            recordCompletedSession(analyticsStoreRef.current),
+          );
           announceTimerCue("complete", settings);
         }
         return;
@@ -596,6 +659,11 @@ export function useAudioLibrary() {
             cycleIndex: phaseState.cycleIndex,
           };
           if (!isInitialBaseline) {
+            if (baseline.phase === "work") {
+              commitAnalyticsStore(
+                recordCompletedSession(analyticsStoreRef.current),
+              );
+            }
             announceTimerCue(
               phaseState.phase,
               settings,
@@ -954,6 +1022,71 @@ export function useAudioLibrary() {
       setBusy(true);
       setError(null);
       try {
+        if (
+          parsed.providerKind === "playlist" ||
+          parsed.providerKind === "album"
+        ) {
+          const fetchedPlaylistTracks = await fetchRemotePlaylistTracks(url, parsed);
+          if (fetchedPlaylistTracks.length === 0) {
+            const metadata = await fetchRemoteMetadata(url, parsed);
+            const providerId = metadata.providerId ?? parsed.providerId;
+            const remoteTrack: Track = {
+              id: `${parsed.provider}:${providerId}`,
+              title: metadata.title,
+              filename: metadata.title,
+              path: url,
+              extension: parsed.provider,
+              source: parsed.provider,
+              url,
+              videoId: parsed.provider === "youtube" ? providerId : undefined,
+              providerId,
+              providerKind: parsed.providerKind,
+              thumbnail: metadata.thumbnail,
+              author: metadata.author,
+            };
+            fetchedPlaylistTracks.push(remoteTrack);
+          }
+
+          const newTracks: Track[] = [];
+          for (const track of fetchedPlaylistTracks) {
+            const existing = remoteTracksRef.current.find(
+              (item) => item.id === track.id || item.url === track.url,
+            );
+            if (!existing) {
+              newTracks.push(track);
+            }
+          }
+
+          if (newTracks.length > 0) {
+            remoteTracksRef.current = [
+              ...newTracks,
+              ...remoteTracksRef.current,
+            ];
+            saveRemoteTracks(remoteTracksRef.current);
+          }
+
+          const allPlaylistIds = fetchedPlaylistTracks.map((t: Track) => {
+            const found = remoteTracksRef.current.find(
+              (item) => item.id === t.id || item.url === t.url,
+            );
+            return found ? found.id : t.id;
+          });
+
+          commitProfileStore(
+            assignTracksToProfile(
+              profileStoreRef.current,
+              activeProfileIdRef.current,
+              allPlaylistIds,
+            ),
+          );
+          const listed = await refresh();
+          const firstAdded = listed.find((track) => track.id === allPlaylistIds[0]);
+          if (firstAdded && !currentIdRef.current) {
+            await loadTrack(firstAdded, false);
+          }
+          return;
+        }
+
         const existing = remoteTracksRef.current.find(
           (track) =>
             track.source === parsed.provider &&
@@ -1382,12 +1515,60 @@ export function useAudioLibrary() {
     document.title = `${timerLabel} · FocusFlow`;
   }, [timerLabel]);
 
+  const todayStats = getTodayStats(analyticsStore);
+  const streakDays = calculateStreak(analyticsStore);
+  const analyticsSummary = useMemo(
+    () => ({
+      todaySummary: formatDailyFocusSummary(
+        todayStats.focusTimeSeconds,
+        todayStats.sessionsCount,
+      ),
+      streakDays,
+      todaySeconds: todayStats.focusTimeSeconds,
+      todaySessions: todayStats.sessionsCount,
+    }),
+    [todayStats.focusTimeSeconds, todayStats.sessionsCount, streakDays],
+  );
+
+  const currentPhase: TimerPhase = useMemo(() => {
+    if (timerSettings.kind === "intervals") {
+      return getIntervalPhase(elapsed * 1000, timerSettings).phase;
+    }
+    return "work";
+  }, [elapsed, timerSettings]);
+
+  const setLibraryOpenSafe = useCallback((open: boolean) => {
+    setLibraryOpen(open);
+    if (open) {
+      setProfilePickerOpen(false);
+      setTimerSettingsOpen(false);
+    }
+  }, []);
+
+  const setProfilePickerOpenSafe = useCallback((open: boolean) => {
+    setProfilePickerOpen(open);
+    if (open) {
+      setLibraryOpen(false);
+      setTimerSettingsOpen(false);
+    }
+  }, []);
+
+  const setTimerSettingsOpenSafe = useCallback((open: boolean) => {
+    setTimerSettingsOpen(open);
+    if (open) {
+      setLibraryOpen(false);
+      setProfilePickerOpen(false);
+    }
+  }, []);
+
   return {
     tracks,
     musicDir,
     currentTrack,
     profiles: profileStore.profiles,
     activeProfileId: profileStore.activeProfileId,
+    analyticsSummary,
+    analyticsStore,
     profilePickerOpen,
     favoriteTrackIds,
     currentTrackId,
@@ -1396,6 +1577,7 @@ export function useAudioLibrary() {
     progress,
     duration,
     elapsed,
+    currentPhase,
     timerLabel,
     mode,
     timerSettings,
@@ -1405,8 +1587,8 @@ export function useAudioLibrary() {
     error,
     ready,
     browserMode: !runningInTauri,
-    setLibraryOpen,
-    setProfilePickerOpen,
+    setLibraryOpen: setLibraryOpenSafe,
+    setProfilePickerOpen: setProfilePickerOpenSafe,
     switchProfile,
     createProfile,
     deleteProfile,
@@ -1435,7 +1617,7 @@ export function useAudioLibrary() {
     onRemoteError,
     resetSession,
     updateTimerSettings,
-    setTimerSettingsOpen,
+    setTimerSettingsOpen: setTimerSettingsOpenSafe,
   };
 }
 

@@ -95,6 +95,67 @@ export async function playSoftPhaseChime(
   }
 }
 
+export async function playMiniGoalCompletionChime(
+  volume = 0.65,
+): Promise<void> {
+  const context = getAudioContext();
+  if (!context) return;
+
+  try {
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+  } catch {
+    return;
+  }
+
+  const now = context.currentTime;
+  const gainLevel = Math.min(0.2, Math.max(0.04, volume * 0.18));
+
+  const tones: Array<{
+    frequency: number;
+    start: number;
+    duration: number;
+    type: OscillatorType;
+    popGlissando?: boolean;
+  }> = [
+    { frequency: 659.25, start: 0, duration: 0.11, type: "sine", popGlissando: true },
+    { frequency: 987.77, start: 0.04, duration: 0.14, type: "sine" },
+    { frequency: 1318.51, start: 0.09, duration: 0.20, type: "triangle" },
+  ];
+
+  for (const tone of tones) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = tone.type;
+
+    if (tone.popGlissando) {
+      oscillator.frequency.setValueAtTime(tone.frequency * 0.78, now);
+      oscillator.frequency.exponentialRampToValueAtTime(
+        tone.frequency,
+        now + 0.025,
+      );
+    } else {
+      oscillator.frequency.setValueAtTime(tone.frequency, now + tone.start);
+    }
+
+    gain.gain.setValueAtTime(0.0001, now + tone.start);
+    gain.gain.exponentialRampToValueAtTime(
+      gainLevel,
+      now + tone.start + 0.015,
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + tone.start + tone.duration,
+    );
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now + tone.start);
+    oscillator.stop(now + tone.start + tone.duration + 0.02);
+  }
+}
+
 function stopActiveVoice(): void {
   if (typeof window !== "undefined" && window.speechSynthesis) {
     window.speechSynthesis.cancel();
@@ -142,9 +203,12 @@ export function speakPhaseCue(
 
   return new Promise<boolean>((resolve) => {
     let finished = false;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
     const finish = (played: boolean) => {
       if (finished) return;
       finished = true;
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       resolve(played);
     };
 
@@ -159,7 +223,7 @@ export function speakPhaseCue(
     utterance.onend = () => finish(true);
     utterance.onerror = () => finish(false);
 
-    const timeoutTimer = setTimeout(() => finish(true), 2000);
+    timeoutTimer = setTimeout(() => finish(true), 2000);
 
     try {
       window.speechSynthesis.speak(utterance);
@@ -172,7 +236,7 @@ export function speakPhaseCue(
         queueMicrotask(() => utterance.onend?.(new Event("end") as SpeechSynthesisEvent));
       }
     } catch {
-      clearTimeout(timeoutTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       finish(false);
     }
   });

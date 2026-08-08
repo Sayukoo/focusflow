@@ -49,6 +49,7 @@ export interface MiniGoal {
   id: string;
   text: string;
   completed: boolean;
+  subGoals?: MiniGoal[];
 }
 
 export type VoicePackId = "system" | "calm-female";
@@ -62,12 +63,15 @@ export interface TimerSettings {
   goal: string;
   userAboutMe?: string;
   miniGoals: MiniGoal[];
+  breakMiniGoals?: MiniGoal[];
   /** Soft chime when an interval phase or finite timer ends. */
   phaseSoundEnabled: boolean;
   /** Optional spoken Polish cue for work/break transitions. */
   phaseVoiceEnabled: boolean;
   /** Local calm female ElevenLabs pack; speech synthesis remains the fallback. */
   voicePack: VoicePackId;
+  /** Broadcast focus activity and countdown to Discord Rich Presence. */
+  discordRpcEnabled: boolean;
 }
 
 export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
@@ -79,9 +83,11 @@ export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
   goal: "",
   userAboutMe: "",
   miniGoals: [],
+  breakMiniGoals: [],
   phaseSoundEnabled: true,
   phaseVoiceEnabled: true,
   voicePack: "calm-female",
+  discordRpcEnabled: true,
 };
 
 export interface PlayerSnapshot {

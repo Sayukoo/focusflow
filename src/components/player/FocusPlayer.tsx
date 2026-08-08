@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import type { FocusAnalyticsStore } from "../../lib/analytics";
 import { isRemoteTrack } from "../../lib/audio";
 import {
   categorizeTrackWithStatus,
@@ -7,19 +9,22 @@ import {
   type TrackCategoryStatus,
 } from "../../lib/gemini";
 import type { MusicProfile } from "../../lib/profiles";
+import { DEFAULT_BREAK_MINI_GOALS } from "../../lib/timer";
 import {
   type FocusMode,
   type MiniGoal,
   type PlaybackQueue,
+  type TimerPhase,
   type TimerSettings,
   type Track,
 } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { MobileMenu } from "../ui/MobileMenu";
+import { KeyboardShortcutsModal } from "../ui/KeyboardShortcutsModal";
 import { MiniGoalChecklist } from "../tasks/MiniGoalChecklist";
 import { MusicLibrary } from "../library/MusicLibrary";
-import { ProfilePicker } from "../settings/ProfilePicker";
+import { ProfilePicker, type FocusAnalyticsSummary } from "../settings/ProfilePicker";
 import { TimerSettings as TimerSettingsModal } from "../settings/TimerSettings";
 import { RemotePlayer } from "../audio/RemotePlayer";
 import { PlaybackControls } from "./PlaybackControls";
@@ -32,6 +37,8 @@ interface FocusPlayerProps {
   currentTrack: Track | null;
   profiles: MusicProfile[];
   activeProfileId: string;
+  analyticsSummary?: FocusAnalyticsSummary;
+  analyticsStore?: FocusAnalyticsStore;
   profilePickerOpen: boolean;
   favoriteTrackIds: string[];
   favoritesOnly: boolean;
@@ -41,6 +48,7 @@ interface FocusPlayerProps {
   progress: number;
   duration: number;
   timerLabel: string;
+  currentPhase?: TimerPhase;
   mode: FocusMode;
   timerSettings: TimerSettings;
   timerSettingsOpen: boolean;
@@ -84,12 +92,39 @@ interface FocusPlayerProps {
   onSetWindowPinned: (pinned: boolean) => void | Promise<void>;
 }
 
+interface ConfettiPiece {
+  id: number;
+  x: string;
+  y: string;
+  rotation: string;
+  color: string;
+  delay: string;
+}
+
+const CONFETTI_TAP_COUNT = 15;
+const CONFETTI_PIECES: ConfettiPiece[] = [
+  { id: 1, x: "-8rem", y: "-7rem", rotation: "-260deg", color: "#ffd6a0", delay: "0ms" },
+  { id: 2, x: "-5.5rem", y: "-9rem", rotation: "180deg", color: "#bcecff", delay: "40ms" },
+  { id: 3, x: "-2rem", y: "-6rem", rotation: "-120deg", color: "#f5b7d5", delay: "80ms" },
+  { id: 4, x: "2.5rem", y: "-8.5rem", rotation: "220deg", color: "#ffe4ae", delay: "20ms" },
+  { id: 5, x: "6rem", y: "-6.5rem", rotation: "-180deg", color: "#c7f3d0", delay: "100ms" },
+  { id: 6, x: "9rem", y: "-3rem", rotation: "260deg", color: "#bcecff", delay: "60ms" },
+  { id: 7, x: "7.5rem", y: "1rem", rotation: "-220deg", color: "#ffd6a0", delay: "120ms" },
+  { id: 8, x: "5rem", y: "4rem", rotation: "160deg", color: "#f5b7d5", delay: "30ms" },
+  { id: 9, x: "1rem", y: "5rem", rotation: "-300deg", color: "#ffe4ae", delay: "90ms" },
+  { id: 10, x: "-3rem", y: "4rem", rotation: "200deg", color: "#c7f3d0", delay: "50ms" },
+  { id: 11, x: "-7rem", y: "2rem", rotation: "-160deg", color: "#bcecff", delay: "110ms" },
+  { id: 12, x: "-9rem", y: "-1rem", rotation: "280deg", color: "#f5b7d5", delay: "70ms" },
+];
+
 export function FocusPlayer({
   tracks,
   musicDir,
   currentTrack,
   profiles,
   activeProfileId,
+  analyticsSummary,
+  analyticsStore,
   profilePickerOpen,
   favoriteTrackIds,
   favoritesOnly,
@@ -99,6 +134,7 @@ export function FocusPlayer({
   progress,
   duration,
   timerLabel,
+  currentPhase,
   mode,
   timerSettings,
   timerSettingsOpen,
@@ -142,13 +178,49 @@ export function FocusPlayer({
   onSetWindowPinned,
 }: FocusPlayerProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [hotkeysModalOpen, setHotkeysModalOpen] = useState(false);
+
+  useKeyboardShortcuts({
+    onTogglePlay: () => void onTogglePlay(),
+    onNext: () => void onNext(),
+    onPrevious: () => void onPrevious(),
+    onToggleLibrary: () => onToggleLibrary(!libraryOpen),
+    onToggleTimer: () => (timerSettingsOpen ? onCloseTimerSettings() : onOpenTimerSettings()),
+    onToggleProfile: () => onToggleProfilePicker(!profilePickerOpen),
+    onToggleShortcuts: () => setHotkeysModalOpen((prev) => !prev),
+    onEscape: () => {
+      if (hotkeysModalOpen) {
+        setHotkeysModalOpen(false);
+        return;
+      }
+      if (libraryOpen) {
+        onToggleLibrary(false);
+        return;
+      }
+      if (timerSettingsOpen) {
+        onCloseTimerSettings();
+        return;
+      }
+      if (profilePickerOpen) {
+        onToggleProfilePicker(false);
+        return;
+      }
+      if (windowPinned) {
+        void onSetWindowPinned(false);
+      }
+    },
+  });
   const [categoryStatus, setCategoryStatus] =
     useState<TrackCategoryStatus>("idle");
   const [currentCategory, setCurrentCategory] = useState<TrackCategory | null>(
     null,
   );
   const [favoriteBursting, setFavoriteBursting] = useState(false);
+  const [confettiBursting, setConfettiBursting] = useState(false);
+  const [confettiBurstId, setConfettiBurstId] = useState(0);
   const favoriteBurstTimerRef = useRef<number | null>(null);
+  const timerTapCountRef = useRef(0);
+  const confettiTimerRef = useRef<number | null>(null);
   const categoryRequestRef = useRef<{
     abortController: AbortController;
     trackId: string;
@@ -240,9 +312,68 @@ export function FocusPlayer({
       if (favoriteBurstTimerRef.current !== null) {
         window.clearTimeout(favoriteBurstTimerRef.current);
       }
+      if (confettiTimerRef.current !== null) {
+        window.clearTimeout(confettiTimerRef.current);
+      }
     },
     [],
   );
+
+  const [draftGoal, setDraftGoal] = useState(timerSettings.goal);
+
+  useEffect(() => {
+    setDraftGoal(timerSettings.goal);
+  }, [timerSettings.goal]);
+
+  const handleGoalChange = (nextGoal: string) => {
+    setDraftGoal(nextGoal);
+    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+    updateFn?.({
+      ...timerSettings,
+      goal: nextGoal,
+    });
+  };
+
+  const handleGoalBlur = () => {
+    const trimmed = draftGoal.trim();
+    setDraftGoal(trimmed);
+    if (trimmed !== timerSettings.goal) {
+      const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+      updateFn?.({
+        ...timerSettings,
+        goal: trimmed,
+      });
+    }
+  };
+
+  const isBreakPhase = currentPhase === "break";
+
+  const handleBreakMiniGoalsChange = useCallback(
+    (nextBreakMiniGoals: MiniGoal[]) => {
+      const nextSettings = {
+        ...timerSettings,
+        breakMiniGoals: nextBreakMiniGoals,
+      };
+      (onTimerSettingsChange ?? onChangeTimerSettings)?.(nextSettings);
+    },
+    [onChangeTimerSettings, onTimerSettingsChange, timerSettings],
+  );
+
+  const handleGoalKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleGoalBlur();
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDraftGoal(timerSettings.goal);
+      event.currentTarget.blur();
+    }
+  };
+
+
 
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId),
@@ -348,6 +479,22 @@ export function FocusPlayer({
     onToggleProfilePicker(true);
   };
 
+  const handleTimerTap = () => {
+    timerTapCountRef.current += 1;
+    if (timerTapCountRef.current < CONFETTI_TAP_COUNT) return;
+
+    timerTapCountRef.current = 0;
+    setConfettiBurstId((current) => current + 1);
+    setConfettiBursting(true);
+    if (confettiTimerRef.current !== null) {
+      window.clearTimeout(confettiTimerRef.current);
+    }
+    confettiTimerRef.current = window.setTimeout(() => {
+      confettiTimerRef.current = null;
+      setConfettiBursting(false);
+    }, 2_000);
+  };
+
   const shellClasses = [
     "focus-shell",
     `mode-${mode}`,
@@ -366,28 +513,43 @@ export function FocusPlayer({
       />
       <div className="focus-atmosphere" aria-hidden="true" />
       <div className="focus-vignette" aria-hidden="true" />
+      {confettiBursting ? (
+        <div
+          key={confettiBurstId}
+          className="timer-confetti"
+          aria-hidden="true"
+        >
+          {CONFETTI_PIECES.map((piece) => (
+            <span
+              key={piece.id}
+              className="timer-confetti-piece"
+              style={
+                {
+                  "--confetti-x": piece.x,
+                  "--confetti-y": piece.y,
+                  "--confetti-rotation": piece.rotation,
+                  "--confetti-color": piece.color,
+                  "--confetti-delay": piece.delay,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
+      ) : null}
 
       <header className="focus-top">
-        <div className="focus-top-left">
-          <button
-            type="button"
-            className="mobile-menu-trigger"
-            aria-label="Open menu"
-            aria-haspopup="dialog"
-            aria-controls="mobile-menu"
-            aria-expanded={mobileMenuOpen}
-            onClick={() => setMobileMenuOpen(true)}
-          >
-            <Icon name="menu" size={20} />
-          </button>
-        </div>
+        <div className="focus-top-left" />
 
         <HeaderControls
           windowPinned={windowPinned}
           windowPinAvailable={windowPinAvailable}
+          volume={volume}
+          onVolume={onVolume}
           onSetWindowPinned={onSetWindowPinned}
           onToggleLibrary={onToggleLibrary}
           onToggleProfilePicker={onToggleProfilePicker}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          mobileMenuOpen={mobileMenuOpen}
         />
       </header>
 
@@ -413,10 +575,13 @@ export function FocusPlayer({
         isPlaying={isPlaying}
         windowPinned={windowPinned}
         windowPinAvailable={windowPinAvailable}
+        analyticsSummary={analyticsSummary}
+        analyticsStore={analyticsStore}
         onClose={() => setMobileMenuOpen(false)}
         onOpenTimer={openMobileTimer}
         onOpenLibrary={openMobileLibrary}
         onOpenProfiles={openMobileProfiles}
+        onOpenShortcuts={() => setHotkeysModalOpen(true)}
         onSetFavoritesOnly={onSetFavoritesOnly}
         onVolume={onVolume}
         onTogglePlay={onTogglePlay}
@@ -424,45 +589,59 @@ export function FocusPlayer({
       />
 
       <main className="focus-center">
-        <button
-          type="button"
+        <div
           className="timer-display"
           aria-label={`Timer ${timerLabel}`}
-          aria-haspopup="dialog"
-          aria-controls="timer-settings-dialog"
-          aria-expanded={timerSettingsOpen}
-          onClick={onOpenTimerSettings}
+          onClick={handleTimerTap}
         >
           {timerLabel}
-        </button>
+        </div>
 
-        {timerSettings.goal ? (
-          <button
-            type="button"
-            className="timer-goal-text-btn"
-            aria-label="Main task - Edit in timer settings"
-            onClick={onOpenTimerSettings}
-          >
-            {timerSettings.goal}
-          </button>
-        ) : null}
+        {!isBreakPhase ? (
+          <textarea
+            rows={3}
+            className="timer-goal-input"
+            value={draftGoal}
+            placeholder="Set main task…"
+            aria-label="Main task"
+            maxLength={300}
+            onChange={(event) => handleGoalChange(event.target.value)}
+            onBlur={handleGoalBlur}
+            onKeyDown={handleGoalKeyDown}
+          />
+        ) : (
+          <div className="timer-goal-break-banner">
+            ☕ Korzystaj z przerwy!
+          </div>
+        )}
 
-        {timerSettings.miniGoals.length > 0 ? (
-          <section
-            className={
-              windowPinned
-                ? "focus-mini-goals focus-mini-goals--flat focus-mini-goals--pinned"
-                : "focus-mini-goals focus-mini-goals--flat focus-mini-goals--desktop"
+        <section
+          className={
+            windowPinned
+              ? "focus-mini-goals focus-mini-goals--flat focus-mini-goals--pinned"
+              : "focus-mini-goals focus-mini-goals--flat focus-mini-goals--desktop"
+          }
+          aria-label={isBreakPhase ? "Break subtasks" : "Subtasks"}
+        >
+          <MiniGoalChecklist
+            items={
+              isBreakPhase
+                ? timerSettings.breakMiniGoals &&
+                  timerSettings.breakMiniGoals.length > 0
+                  ? timerSettings.breakMiniGoals
+                  : DEFAULT_BREAK_MINI_GOALS
+                : timerSettings.miniGoals
             }
-            aria-label="Subtasks"
-          >
-            <MiniGoalChecklist
-              items={timerSettings.miniGoals}
-              label="Subtasks"
-              onChange={handleMiniGoalsChange}
-            />
-          </section>
-        ) : null}
+            mainGoal={isBreakPhase ? "Czas na Przerwę" : timerSettings.goal}
+            userAboutMe={timerSettings.userAboutMe}
+            workDurationMinutes={timerSettings.workDurationMinutes}
+            label={isBreakPhase ? "Przerwowe micro-cele" : "Subtasks"}
+            isBreakPhase={isBreakPhase}
+            onChange={
+              isBreakPhase ? handleBreakMiniGoalsChange : handleMiniGoalsChange
+            }
+          />
+        </section>
       </main>
 
       <footer className="focus-bottom">
@@ -649,6 +828,11 @@ export function FocusPlayer({
         onChange={(settings) =>
           (onTimerSettingsChange ?? onChangeTimerSettings)?.(settings)
         }
+      />
+
+      <KeyboardShortcutsModal
+        open={hotkeysModalOpen}
+        onClose={() => setHotkeysModalOpen(false)}
       />
 
       {error ? (

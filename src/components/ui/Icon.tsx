@@ -2,15 +2,18 @@ import type { ReactElement, SVGProps } from "react";
 
 export type IconName =
   | "arrow-left"
+  | "chart-bar"
   | "chevron-down"
   | "check"
   | "clock"
   | "close"
+  | "flame"
   | "folder"
   | "folder-open"
   | "heart"
   | "infinity"
   | "intervals"
+  | "keyboard"
   | "library"
   | "music-library"
   | "link"
@@ -43,6 +46,14 @@ interface IconProps extends SVGProps<SVGSVGElement> {
 
 const icons: Record<IconName, ReactElement> = {
   "arrow-left": <path d="M19 12H5M12 19l-7-7 7-7" />,
+  "chart-bar": (
+    <>
+      <path d="M12 20V10M18 20V4M6 20v-6" />
+    </>
+  ),
+  flame: (
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 17c1.38 0 2.5-1.12 2.5-2.5 0-1.87-1.5-3-2.5-4.5-1.5 1.5-2.5 2.8-2.5 4.5Z M12 2C8 6 4 10 4 14.5A8 8 0 0 0 20 14.5C20 10 17 6.5 12 2Z" />
+  ),
   "chevron-down": <path d="m6 9 6 6 6-6" />,
   check: <path d="M20 6 9 17l-5-5" />,
   clock: (
@@ -54,14 +65,13 @@ const icons: Record<IconName, ReactElement> = {
   close: <path d="M18 6 6 18M6 6l12 12" />,
   folder: (
     <>
-      <path d="M3.5 7.8a2 2 0 0 1 2-2h3l1.8 2h8.2a2 2 0 0 1 2 2v6.4a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" />
-      <path d="M3.8 10h16.1" />
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
     </>
   ),
   "folder-open": (
     <>
-      <path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2a2 2 0 0 1 1.4.6l1.4 1.4a2 2 0 0 0 1.4.6H18.5a2 2 0 0 1 2 2v2" />
-      <path d="M2.5 19.5L4.8 10a1.8 1.8 0 0 1 1.75-1.4h14.9a1.8 1.8 0 0 1 1.75 2.2l-2 8a1.8 1.8 0 0 1-1.75 1.4H4.25a1.8 1.8 0 0 1-1.75-2.2Z" />
+      <path d="M4 9V5a2 2 0 0 1 2-2h3.5l1.8 2H18a2 2 0 0 1 2 2v2" />
+      <path d="M3 20h18a1 1 0 0 0 1-1.17l-1.8-9A1 1 0 0 0 21.2 9H6.4a1 1 0 0 0-1 .8L3 20Z" />
     </>
   ),
   target: (
@@ -82,6 +92,12 @@ const icons: Record<IconName, ReactElement> = {
       <path d="M18.6 4.8v2.8M18.6 7.6h2.8" />
     </>
   ),
+  keyboard: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2.5" />
+      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+    </>
+  ),
   library: (
     <>
       <path d="M5.5 4.5v15" />
@@ -91,11 +107,10 @@ const icons: Record<IconName, ReactElement> = {
   ),
   "music-library": (
     <>
-      <path d="M3.5 8.3a2 2 0 0 1 2-2h4.1l1.8 1.8h7.1a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2Z" />
-      <path d="M4 10.5h16" />
-      <path d="M14.2 12.2v4.1l3.4-.8v-4.1Z" />
-      <circle cx="12.8" cy="16.8" r="1.25" />
-      <circle cx="16.2" cy="16" r="1.25" />
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+      <path d="M11.5 16.5v-5.2l5-1.3v4.5" />
+      <circle cx="10" cy="16.5" r="1.5" />
+      <circle cx="15" cy="14.5" r="1.5" />
     </>
   ),
   link: (

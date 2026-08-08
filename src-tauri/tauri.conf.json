@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "FocusFlow",
+  "productName": "Brain.fm",
   "version": "0.1.0",
   "identifier": "com.brainfm.focus",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "FocusFlow",
+        "title": "Brain.fm",
         "width": 1280,
         "height": 800,
         "minWidth": 320,
@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [],
     "icon": [
       "icons/icon.ico",
       "icons/icon.png",

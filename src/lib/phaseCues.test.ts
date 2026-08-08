@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   announcePhaseTransition,
+  playMiniGoalCompletionChime,
   playSoftPhaseChime,
   playVoicePackCue,
   speakPhaseCue,
@@ -14,6 +15,7 @@ describe("phase cues", () => {
 
   it("no-ops safely when Web Audio is unavailable", async () => {
     await expect(playSoftPhaseChime("break", 0.5)).resolves.toBeUndefined();
+    await expect(playMiniGoalCompletionChime(0.65)).resolves.toBeUndefined();
   });
 
   it("speaks a Polish break announcement when speech synthesis exists", () => {

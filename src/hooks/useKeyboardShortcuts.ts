@@ -1,0 +1,106 @@
+import { useEffect } from "react";
+
+interface KeyboardShortcutsOptions {
+  onTogglePlay?: () => void;
+  onNext?: () => void;
+  onPrevious?: () => void;
+  onToggleLibrary?: () => void;
+  onToggleTimer?: () => void;
+  onToggleProfile?: () => void;
+  onToggleShortcuts?: () => void;
+  onEscape?: () => void;
+  disabled?: boolean;
+}
+
+export function useKeyboardShortcuts({
+  onTogglePlay,
+  onNext,
+  onPrevious,
+  onToggleLibrary,
+  onToggleTimer,
+  onToggleProfile,
+  onToggleShortcuts,
+  onEscape,
+  disabled = false,
+}: KeyboardShortcutsOptions): void {
+  useEffect(() => {
+    if (disabled) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      // Handle Escape anywhere
+      if (event.key === "Escape") {
+        if (onEscape) {
+          event.preventDefault();
+          onEscape();
+          return;
+        }
+      }
+
+      // Handle Ctrl/Cmd + M anywhere for AI breakdown shortcut
+      if ((event.ctrlKey || event.metaKey) && (event.key === "m" || event.key === "M")) {
+        // Can be handled by specific components or registered
+        return;
+      }
+
+      // Ignore standard hotkeys if user is actively typing in an input
+      if (isInput) return;
+
+      if (event.key === " " || event.code === "Space") {
+        if (onTogglePlay) {
+          event.preventDefault();
+          onTogglePlay();
+        }
+      } else if (event.key === "?" || (event.shiftKey && event.key === "/")) {
+        if (onToggleShortcuts) {
+          event.preventDefault();
+          onToggleShortcuts();
+        }
+      } else if (event.key === "l" || event.key === "L") {
+        if (onToggleLibrary) {
+          event.preventDefault();
+          onToggleLibrary();
+        }
+      } else if (event.key === "t" || event.key === "T") {
+        if (onToggleTimer) {
+          event.preventDefault();
+          onToggleTimer();
+        }
+      } else if (event.key === "s" || event.key === "S") {
+        if (onToggleProfile) {
+          event.preventDefault();
+          onToggleProfile();
+        }
+      } else if (event.key === "n" || event.key === "N" || event.key === "ArrowRight") {
+        if (onNext && !event.shiftKey && !event.ctrlKey) {
+          event.preventDefault();
+          onNext();
+        }
+      } else if (event.key === "p" || event.key === "P" || event.key === "ArrowLeft") {
+        if (onPrevious && !event.shiftKey && !event.ctrlKey) {
+          event.preventDefault();
+          onPrevious();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    disabled,
+    onEscape,
+    onNext,
+    onPrevious,
+    onToggleLibrary,
+    onTogglePlay,
+    onToggleProfile,
+    onToggleShortcuts,
+    onToggleTimer,
+  ]);
+}

@@ -54,6 +54,8 @@ function App() {
       currentTrack={player.currentTrack}
       profiles={player.profiles}
       activeProfileId={player.activeProfileId}
+      analyticsSummary={player.analyticsSummary}
+      analyticsStore={player.analyticsStore}
       profilePickerOpen={player.profilePickerOpen}
       favoriteTrackIds={player.favoriteTrackIds}
       favoritesOnly={player.favoritesOnly}
@@ -63,6 +65,7 @@ function App() {
       progress={player.progress}
       duration={player.duration}
       timerLabel={player.timerLabel}
+      currentPhase={player.currentPhase}
       mode={player.mode}
       timerSettings={player.timerSettings}
       timerSettingsOpen={player.timerSettingsOpen}

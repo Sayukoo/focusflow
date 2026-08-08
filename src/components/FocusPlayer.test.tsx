@@ -191,10 +191,10 @@ describe("FocusPlayer AI category chip", () => {
     ).not.toBeInTheDocument();
     expect(document.querySelector(".focus-mini-goals--desktop")).not.toBeNull();
 
-    const timer = screen.getByRole("button", { name: "Timer 0:00" });
-    const goal = screen.getByText("Finish the outline");
+    const timer = screen.getByText("0:00", { selector: ".timer-display" });
+    const goal = screen.getByRole("textbox", { name: "Main task" });
     const checkbox = screen.getByRole("checkbox", {
-      name: "Mark mini goal 1 complete",
+      name: "Mark subtask 1 complete",
     });
     expect(
       timer.compareDocumentPosition(goal) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -212,7 +212,7 @@ describe("FocusPlayer AI category chip", () => {
       ],
     });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Mini goal 1" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Subtask 1" }), {
       target: { value: "Review the document" },
     });
     expect(onChangeTimerSettings).toHaveBeenLastCalledWith({
@@ -222,6 +222,27 @@ describe("FocusPlayer AI category chip", () => {
         timerSettings.miniGoals[1],
       ],
     });
+  });
+
+  it("keeps timer taps out of settings and emits one confetti burst after fifteen taps", () => {
+    const onOpenTimerSettings = vi.fn();
+
+    render(
+      <FocusPlayer
+        {...createProps()}
+        onOpenTimerSettings={onOpenTimerSettings}
+      />,
+    );
+
+    const timer = screen.getByText("0:00", { selector: ".timer-display" });
+    for (let tap = 0; tap < 15; tap += 1) {
+      fireEvent.click(timer);
+    }
+
+    expect(onOpenTimerSettings).not.toHaveBeenCalled();
+    expect(document.querySelector(".timer-confetti")).not.toBeNull();
+    expect(document.querySelector(".timer-tap-burst")).toBeNull();
+    expect(document.querySelector(".fireworks-mode")).toBeNull();
   });
 
   it("keeps the pinned view compact and leaves interval controls in the menu", () => {
@@ -266,10 +287,10 @@ describe("FocusPlayer AI category chip", () => {
       screen.queryByRole("button", { name: "Work interval 40 minutes" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("checkbox", { name: "Mark mini goal 1 complete" }),
+      screen.getByRole("checkbox", { name: "Mark subtask 1 complete" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("textbox", { name: "Mini goal 2" }),
+      screen.getByRole("textbox", { name: "Subtask 2" }),
     ).toHaveValue("Write the first heading");
 
     fireEvent.click(unpinButton);
