@@ -47,6 +47,7 @@ interface FocusPlayerProps {
   volume: number;
   progress: number;
   duration: number;
+  playbackRate?: number;
   timerLabel: string;
   currentPhase?: TimerPhase;
   mode: FocusMode;
@@ -76,6 +77,7 @@ interface FocusPlayerProps {
   onNext: () => void | Promise<void>;
   onPrevious: () => void | Promise<void>;
   onVolume: (value: number) => void;
+  onPlaybackRateChange?: (rate: number) => void;
   onSeek: (seconds: number) => void;
   onRemotePlaying: (playing: boolean) => void;
   onRemoteTime: (time: number) => void;
@@ -133,6 +135,7 @@ export function FocusPlayer({
   volume,
   progress,
   duration,
+  playbackRate = 1.0,
   timerLabel,
   currentPhase,
   mode,
@@ -162,6 +165,7 @@ export function FocusPlayer({
   onNext,
   onPrevious,
   onVolume,
+  onPlaybackRateChange,
   onSeek,
   onRemotePlaying,
   onRemoteTime,
@@ -760,10 +764,13 @@ export function FocusPlayer({
           isPlaying={isPlaying}
           progress={progress}
           duration={duration}
+          mode={mode}
+          playbackRate={playbackRate}
           onTogglePlay={onTogglePlay}
           onNext={onNext}
           onPrevious={onPrevious}
           onSeek={onSeek}
+          onPlaybackRateChange={onPlaybackRateChange}
         />
 
         <div className="focus-controls focus-stats">
@@ -790,6 +797,7 @@ export function FocusPlayer({
           track={currentTrack}
           playing={isPlaying}
           volume={volume}
+          playbackRate={playbackRate}
           seekRequest={remoteSeekRequest}
           onTime={onRemoteTime}
           onDuration={onRemoteDuration}

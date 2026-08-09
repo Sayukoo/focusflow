@@ -5,6 +5,7 @@ interface YouTubePlayerProps {
   track: Track | null;
   playing: boolean;
   volume: number;
+  playbackRate?: number;
   seekRequest: { value: number; token: number } | null;
   onTime: (value: number) => void;
   onDuration: (value: number) => void;
@@ -22,6 +23,7 @@ interface YouTubePlayerInstance {
   playVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   setVolume: (volume: number) => void;
+  setPlaybackRate?: (suggestedRate: number) => void;
 }
 
 interface YouTubeApi {
@@ -66,6 +68,7 @@ export function YouTubePlayer({
   track,
   playing,
   volume,
+  playbackRate = 1.0,
   seekRequest,
   onTime,
   onDuration,
@@ -77,7 +80,7 @@ export function YouTubePlayer({
   const playerRef = useRef<YouTubePlayerInstance | null>(null);
   const lastSeekTokenRef = useRef<number | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
-  const playbackRef = useRef({ playing, volume });
+  const playbackRef = useRef({ playing, volume, playbackRate });
   const callbacksRef = useRef({
     onDuration,
     onEnded,
@@ -85,7 +88,7 @@ export function YouTubePlayer({
     onPlaying,
     onTime,
   });
-  playbackRef.current = { playing, volume };
+  playbackRef.current = { playing, volume, playbackRate };
   callbacksRef.current = {
     onDuration,
     onEnded,
@@ -176,6 +179,9 @@ export function YouTubePlayer({
               if (typeof event.target.setVolume === "function") {
                 event.target.setVolume(playbackRef.current.volume * 100);
               }
+              if (typeof event.target.setPlaybackRate === "function" && playbackRef.current.playbackRate) {
+                event.target.setPlaybackRate(playbackRef.current.playbackRate);
+              }
               const duration =
                 typeof event.target.getDuration === "function"
                   ? event.target.getDuration()
@@ -249,6 +255,12 @@ export function YouTubePlayer({
       playerRef.current.setVolume(volume * 100);
     }
   }, [volume]);
+
+  useEffect(() => {
+    if (typeof playerRef.current?.setPlaybackRate === "function" && playbackRate) {
+      playerRef.current.setPlaybackRate(playbackRate);
+    }
+  }, [playbackRate]);
 
   useEffect(() => {
     const player = playerRef.current;

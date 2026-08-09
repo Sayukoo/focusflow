@@ -229,12 +229,15 @@ describe("timer snapshot persistence", () => {
     savePlayerSnapshot({
       currentTrackId: null,
       volume: 0.72,
-      mode: "deep",
+      mode: "energizing",
       durationPreset: 25,
       timerSettings,
+      playbackRate: 1.3,
     });
 
-    expect(loadPlayerSnapshot().timerSettings).toEqual(timerSettings);
+    const snapshot = loadPlayerSnapshot();
+    expect(snapshot.timerSettings).toEqual(timerSettings);
+    expect(snapshot.playbackRate).toBe(1.3);
   });
 });
 

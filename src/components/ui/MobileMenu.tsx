@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   formatFocusDuration,
+  getPolishSessionsLabel,
   getWeeklyFocusStats,
   loadDailyGoalMinutes,
   saveDailyGoalMinutes,
@@ -215,7 +216,7 @@ export function MobileMenu({
               <div className="mobile-menu-brand">
                 <span className="mobile-menu-eyebrow">
                   <span className="mobile-menu-dot" aria-hidden="true" />
-                  BRAIN.FM
+                  FOCUSFLOW
                 </span>
                 <strong id="mobile-menu-title">Quick controls</strong>
               </div>
@@ -391,6 +392,11 @@ export function MobileMenu({
             <section className="mobile-menu-section mobile-menu-analytics-section" aria-label="Statystyki skupienia">
               <div className="mobile-menu-section-heading">
                 <span>Statystyki</span>
+                {weeklyStats && weeklyStats.totalWeeklySeconds > 0 ? (
+                  <output title="Łączny czas skupienia w tym tygodniu">
+                    W tym tygodniu: {formatFocusDuration(weeklyStats.totalWeeklySeconds)}
+                  </output>
+                ) : null}
               </div>
               <div className="profile-analytics-card">
                 <div className="profile-analytics-top-row">
@@ -423,6 +429,7 @@ export function MobileMenu({
                           ),
                         );
                         const formattedDuration = formatFocusDuration(day.focusTimeSeconds);
+                        const dayTitle = `${day.date} (${day.dayLabel}): ${formattedDuration} · ${getPolishSessionsLabel(day.sessionsCount)}`;
                         return (
                           <KaTeXTooltip
                             key={day.date}
@@ -430,6 +437,7 @@ export function MobileMenu({
                           >
                             <div
                               className={`analytics-bar-col ${day.isToday ? "is-today" : ""}`}
+                              title={dayTitle}
                             >
                               <div className="analytics-bar-track">
                                 <div

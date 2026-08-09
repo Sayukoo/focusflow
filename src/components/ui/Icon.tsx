@@ -10,6 +10,7 @@ export type IconName =
   | "flame"
   | "folder"
   | "folder-open"
+  | "gauge"
   | "heart"
   | "infinity"
   | "intervals"
@@ -72,6 +73,13 @@ const icons: Record<IconName, ReactElement> = {
     <>
       <path d="M4 9V5a2 2 0 0 1 2-2h3.5l1.8 2H18a2 2 0 0 1 2 2v2" />
       <path d="M3 20h18a1 1 0 0 0 1-1.17l-1.8-9A1 1 0 0 0 21.2 9H6.4a1 1 0 0 0-1 .8L3 20Z" />
+    </>
+  ),
+  gauge: (
+    <>
+      <path d="M12 14l3.5-3.5" />
+      <path d="M4 14a8 8 0 1 1 16 0" />
+      <circle cx="12" cy="14" r="1.2" fill="currentColor" />
     </>
   ),
   target: (

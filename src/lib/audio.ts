@@ -666,6 +666,7 @@ export function loadPlayerSnapshot(): Partial<{
   mode: string;
   durationPreset: DurationPreset | string;
   timerSettings: TimerSettings;
+  playbackRate: number;
 }> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -682,6 +683,7 @@ export function savePlayerSnapshot(snapshot: {
   mode: string;
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
+  playbackRate?: number;
 }): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }

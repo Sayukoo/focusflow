@@ -108,6 +108,8 @@ function App() {
       onPrevious={() => void player.playPrevious()}
       onSeek={player.seek}
       onVolume={player.setVolume}
+      playbackRate={player.playbackRate}
+      onPlaybackRateChange={player.setPlaybackRate}
       onToggleFavorite={player.toggleFavorite}
       onPlayQueue={player.playQueue}
       onOpenTimerSettings={() => player.setTimerSettingsOpen(true)}

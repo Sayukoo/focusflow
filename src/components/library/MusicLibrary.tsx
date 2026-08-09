@@ -199,7 +199,7 @@ export const MusicLibrary = memo(function MusicLibrary({
             </span>
             <div>
               <strong className="library-title">{activeProfileName}</strong>
-              <span className="library-breadcrumb">Brain.fm / profile music</span>
+              <span className="library-breadcrumb">FocusFlow / profile music</span>
             </div>
           </div>
 

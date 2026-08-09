@@ -3,36 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { HeaderControls } from "./HeaderControls";
 
 describe("HeaderControls", () => {
-  it("renders volume control and allows changing volume via popover", () => {
-    const onVolume = vi.fn();
-    const onSetWindowPinned = vi.fn();
-    const onToggleLibrary = vi.fn();
-    const onToggleProfilePicker = vi.fn();
-
+  it("hides volume control in main view when window is not pinned", () => {
     render(
       <HeaderControls
         windowPinned={false}
         volume={0.7}
-        onVolume={onVolume}
-        onSetWindowPinned={onSetWindowPinned}
-        onToggleLibrary={onToggleLibrary}
-        onToggleProfilePicker={onToggleProfilePicker}
+        onSetWindowPinned={vi.fn()}
+        onToggleLibrary={vi.fn()}
+        onToggleProfilePicker={vi.fn()}
       />
     );
 
-    // Open volume popover by clicking volume button
-    const volumeBtn = screen.getByRole("button", { name: /volume 70%/i });
-    expect(volumeBtn).toBeInTheDocument();
-    fireEvent.click(volumeBtn);
-
-    // Slider should now be present
-    const slider = screen.getByRole("slider", { name: /volume slider/i });
-    expect(slider).toBeInTheDocument();
-    expect(slider).toHaveValue("0.7");
-
-    // Change slider value
-    fireEvent.change(slider, { target: { value: "0.45" } });
-    expect(onVolume).toHaveBeenCalledWith(0.45);
+    const volumeBtn = screen.queryByRole("button", { name: /volume 70%/i });
+    expect(volumeBtn).not.toBeInTheDocument();
   });
 
   it("renders menu button and volume control when window is pinned", () => {

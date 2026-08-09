@@ -42,35 +42,37 @@ export function HeaderControls({
 
   return (
     <div className="focus-top-right">
-      <div className="header-volume-wrapper volume-pin-control" ref={popoverRef}>
-        <KaTeXTooltip formula={`\\text{Głośność: ${volumePct}\\%}`}>
-          <button
-            type="button"
-            className="icon-btn ghost header-volume-btn"
-            aria-label={`Volume ${volumePct}%`}
-            onClick={() => setShowVolumePopover((prev) => !prev)}
-          >
-            <Icon name="volume" size={18} />
-          </button>
-        </KaTeXTooltip>
+      {windowPinned && (
+        <div className="header-volume-wrapper volume-pin-control" ref={popoverRef}>
+          <KaTeXTooltip formula={`\\text{Głośność: ${volumePct}\\%}`}>
+            <button
+              type="button"
+              className="icon-btn ghost header-volume-btn"
+              aria-label={`Volume ${volumePct}%`}
+              onClick={() => setShowVolumePopover((prev) => !prev)}
+            >
+              <Icon name="volume" size={18} />
+            </button>
+          </KaTeXTooltip>
 
-        {showVolumePopover && (
-          <div className="header-volume-popover">
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              style={{ "--vol": `${volumePct}%` } as React.CSSProperties}
-              aria-label="Volume slider"
-              onChange={(e) => onVolume?.(Number(e.target.value))}
-              onInput={(e) => onVolume?.(Number(e.currentTarget.value))}
-            />
-            <span className="header-volume-text">{volumePct}%</span>
-          </div>
-        )}
-      </div>
+          {showVolumePopover && (
+            <div className="header-volume-popover">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                style={{ "--vol": `${volumePct}%` } as React.CSSProperties}
+                aria-label="Volume slider"
+                onChange={(e) => onVolume?.(Number(e.target.value))}
+                onInput={(e) => onVolume?.(Number(e.currentTarget.value))}
+              />
+              <span className="header-volume-text">{volumePct}%</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <KaTeXTooltip
         wrapperClassName="window-pin-control"

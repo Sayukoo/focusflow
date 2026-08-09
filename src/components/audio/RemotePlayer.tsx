@@ -9,6 +9,7 @@ export interface RemotePlayerProps {
   track: Track | null;
   playing: boolean;
   volume: number;
+  playbackRate?: number;
   seekRequest: { value: number; token: number } | null;
   onTime: (value: number) => void;
   onDuration: (value: number) => void;

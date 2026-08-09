@@ -61,18 +61,20 @@ export const ProfilePicker = memo(function ProfilePicker({
       onClick={(event) => event.stopPropagation()}
     >
       <div className="profile-popover-header">
-        <div>
+        <div className="profile-popover-header-title">
           <strong>Account & Profiles</strong>
-          <span>Private on this device</span>
+          <span className="profile-privacy-tag">
+            <span className="profile-privacy-badge">Private on device</span>
+          </span>
         </div>
         <KaTeXTooltip formula="\text{Close settings}">
           <button
             type="button"
-            className="icon-btn ghost"
+            className="icon-btn ghost profile-close-btn"
             aria-label="Close settings"
             onClick={onClose}
           >
-            <Icon name="close" size={17} />
+            <Icon name="close" size={16} />
           </button>
         </KaTeXTooltip>
       </div>
@@ -98,9 +100,11 @@ export const ProfilePicker = memo(function ProfilePicker({
                 />
                 <span className="profile-option-copy">
                   <strong>{profile.name}</strong>
-                  <small>{profile.kind === "builtin" ? "Built-in" : "Custom"}</small>
+                  <span className="profile-option-badge">
+                    {profile.kind === "builtin" ? "Built-in" : "Custom"}
+                  </span>
                 </span>
-                {active ? <Icon name="check" size={16} /> : null}
+                {active ? <Icon name="check" size={16} className="profile-option-check" /> : null}
               </button>
               {profile.kind === "custom" ? (
                 <KaTeXTooltip formula={`\\text{Delete ${escapeTex(profile.name)}}`}>
@@ -124,7 +128,7 @@ export const ProfilePicker = memo(function ProfilePicker({
           type="text"
           value={name}
           maxLength={40}
-          placeholder="New profile"
+          placeholder="New profile name..."
           aria-label="New profile name"
           onChange={(event) => setName(event.target.value)}
         />
@@ -135,7 +139,8 @@ export const ProfilePicker = memo(function ProfilePicker({
 
       <div className="profile-about-me-section">
         <div className="profile-about-me-header">
-          <span>Informacje o mnie</span>
+          <span className="profile-about-me-title">Informacje o mnie</span>
+          <span className="profile-about-me-subtitle">Pamięć AI</span>
         </div>
         <div className="profile-about-me-wrap">
           <textarea
@@ -146,10 +151,17 @@ export const ProfilePicker = memo(function ProfilePicker({
             aria-label="Informacje o mnie"
             onChange={(event) => setDraftAboutMe(event.target.value)}
           />
-          <div className="profile-about-me-actions">
+          <div className="profile-about-me-footer">
+            <span className="profile-about-me-counter">
+              {draftAboutMe.length} / 4000
+            </span>
             <button
               type="button"
-              className="profile-about-me-save-btn"
+              className={
+                justSaved
+                  ? "profile-about-me-save-btn is-saved"
+                  : "profile-about-me-save-btn"
+              }
               disabled={!isChanged && !justSaved}
               onClick={handleSaveAboutMe}
             >

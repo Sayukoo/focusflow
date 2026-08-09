@@ -1,10 +1,10 @@
 # FocusFlow
 
-Desktop focus player inspired by Brain.fm, built with **Tauri 2 + React + TypeScript**.
+Desktop focus player built with **Tauri 2 + React + TypeScript**.
 
 Play your own local music. Files are copied into a managed app folder:
 
-`%APPDATA%/com.brainfm.focus/music`
+`%APPDATA%/com.focusflow.app/music`
 
 ## Features
 

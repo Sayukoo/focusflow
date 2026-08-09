@@ -90,10 +90,15 @@ export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
   discordRpcEnabled: true,
 };
 
+export const PLAYBACK_RATES = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2.0] as const;
+export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
+
 export interface PlayerSnapshot {
   currentTrackId: string | null;
   volume: number;
   mode: FocusMode;
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
+  playbackRate?: number;
 }
+

@@ -9,7 +9,12 @@ export interface FocusAnalyticsStore {
   history: Record<string, DailyFocusRecord>;
 }
 
-const ANALYTICS_STORAGE_KEY = "focusflow.analytics";
+export const ANALYTICS_STORAGE_KEYS = [
+  "focusflow.analytics",
+  "brainfm.analytics",
+  "focusflow_analytics",
+  "brainfm_analytics",
+];
 
 export function getLocalDateString(date = new Date()): string {
   const year = date.getFullYear();
@@ -25,13 +30,61 @@ export function createDefaultAnalyticsStore(): FocusAnalyticsStore {
   };
 }
 
+export function mergeAnalyticsStores(
+  ...stores: (FocusAnalyticsStore | null | undefined)[]
+): FocusAnalyticsStore {
+  const mergedHistory: Record<string, DailyFocusRecord> = {};
+
+  for (const store of stores) {
+    if (!store?.history) continue;
+    for (const [dateKey, record] of Object.entries(store.history)) {
+      if (!record || typeof record !== "object") continue;
+      const existing = mergedHistory[dateKey];
+      if (!existing) {
+        mergedHistory[dateKey] = {
+          date: dateKey,
+          focusTimeSeconds: Math.max(0, record.focusTimeSeconds || 0),
+          sessionsCount: Math.max(0, record.sessionsCount || 0),
+        };
+      } else {
+        mergedHistory[dateKey] = {
+          date: dateKey,
+          focusTimeSeconds: Math.max(existing.focusTimeSeconds, record.focusTimeSeconds || 0),
+          sessionsCount: Math.max(existing.sessionsCount, record.sessionsCount || 0),
+        };
+      }
+    }
+  }
+
+  return {
+    version: 1,
+    history: mergedHistory,
+  };
+}
+
 export function loadAnalyticsStore(): FocusAnalyticsStore {
   try {
-    const raw =
-      localStorage.getItem(ANALYTICS_STORAGE_KEY) ??
-      localStorage.getItem("brainfm.analytics");
-    if (!raw) return createDefaultAnalyticsStore();
-    return normalizeAnalyticsStore(JSON.parse(raw) as unknown);
+    const loadedStores: FocusAnalyticsStore[] = [];
+    for (const key of ANALYTICS_STORAGE_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          const normalized = normalizeAnalyticsStore(parsed);
+          if (Object.keys(normalized.history).length > 0) {
+            loadedStores.push(normalized);
+          }
+        } catch {
+          // Ignore invalid JSON for a key
+        }
+      }
+    }
+    if (loadedStores.length === 0) {
+      return createDefaultAnalyticsStore();
+    }
+    const merged = mergeAnalyticsStores(...loadedStores);
+    saveAnalyticsStore(merged);
+    return merged;
   } catch {
     return createDefaultAnalyticsStore();
   }
@@ -39,7 +92,10 @@ export function loadAnalyticsStore(): FocusAnalyticsStore {
 
 export function saveAnalyticsStore(store: FocusAnalyticsStore): void {
   try {
-    localStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(store));
+    const json = JSON.stringify(store);
+    for (const key of ANALYTICS_STORAGE_KEYS) {
+      localStorage.setItem(key, json);
+    }
   } catch {
     // Storage might be restricted in some environments.
   }

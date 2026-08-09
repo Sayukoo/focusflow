@@ -114,6 +114,8 @@ export function useAudioLibrary() {
   const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolumeState] = useState(0.72);
+  const [playbackRate, setPlaybackRateState] = useState(1.0);
+  const playbackRateRef = useRef(1.0);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [remoteSeekRequest, setRemoteSeekRequest] = useState<{
@@ -346,6 +348,7 @@ export function useAudioLibrary() {
       runningInTauri && track.source !== "browser"
         ? convertFileSrc(track.path)
         : track.path;
+    audio.playbackRate = playbackRateRef.current;
     audio.load();
 
     if (autoplay) {
@@ -440,6 +443,12 @@ export function useAudioLibrary() {
       const nextVolume = Math.min(1, Math.max(0, snapshot.volume));
       setVolumeState(nextVolume);
       audio.volume = nextVolume;
+    }
+    if (typeof snapshot.playbackRate === "number") {
+      const restoredRate = Math.min(2.0, Math.max(0.5, snapshot.playbackRate));
+      setPlaybackRateState(restoredRate);
+      playbackRateRef.current = restoredRate;
+      audio.playbackRate = restoredRate;
     }
     if (snapshot.timerSettings !== undefined) {
       const restoredSettings = normalizeTimerSettings(snapshot.timerSettings);
@@ -540,15 +549,17 @@ export function useAudioLibrary() {
             ? timerSettings.durationMinutes
             : 60,
       timerSettings,
+      playbackRate,
     });
-  }, [ready, currentTrackId, volume, mode, timerSettings]);
+  }, [ready, currentTrackId, volume, mode, timerSettings, playbackRate]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
       audio.volume = Math.min(1, Math.max(0, volume * duckingMultiplier));
+      audio.playbackRate = playbackRate;
     }
-  }, [volume, duckingMultiplier]);
+  }, [volume, duckingMultiplier, playbackRate]);
 
   const syncTimerClock = useCallback(() => {
     const nowMs = Date.now();
@@ -856,6 +867,15 @@ export function useAudioLibrary() {
 
   const setVolume = useCallback((value: number) => {
     setVolumeState(Math.min(1, Math.max(0, value)));
+  }, []);
+
+  const setPlaybackRate = useCallback((rate: number) => {
+    const nextRate = Math.min(2.0, Math.max(0.5, rate));
+    playbackRateRef.current = nextRate;
+    setPlaybackRateState(nextRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
   }, []);
 
   const toggleFavorite = useCallback((trackId: string) => {
@@ -1605,6 +1625,8 @@ export function useAudioLibrary() {
     playPrevious,
     seek,
     setVolume,
+    playbackRate,
+    setPlaybackRate,
     toggleFavorite,
     playQueue,
     favoritesOnly,

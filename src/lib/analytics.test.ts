@@ -104,12 +104,20 @@ describe("analytics module", () => {
       expect(stats.sessionsCount).toBe(1);
     });
 
-    it("loads store from legacy storage key if present", () => {
+    it("loads and merges stores across multiple legacy and current storage keys", () => {
       localStorage.setItem(
         "brainfm.analytics",
         JSON.stringify({
           history: {
             "2026-08-07": { date: "2026-08-07", focusTimeSeconds: 1800, sessionsCount: 2 },
+          },
+        }),
+      );
+      localStorage.setItem(
+        "focusflow.analytics",
+        JSON.stringify({
+          history: {
+            "2026-08-08": { date: "2026-08-08", focusTimeSeconds: 3600, sessionsCount: 3 },
           },
         }),
       );
@@ -119,6 +127,11 @@ describe("analytics module", () => {
         date: "2026-08-07",
         focusTimeSeconds: 1800,
         sessionsCount: 2,
+      });
+      expect(loaded.history["2026-08-08"]).toEqual({
+        date: "2026-08-08",
+        focusTimeSeconds: 3600,
+        sessionsCount: 3,
       });
     });
   });

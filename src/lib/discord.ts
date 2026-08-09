@@ -55,10 +55,10 @@ export function buildDiscordPresencePayload(params: {
   if (settings.kind === "infinite" || settings.durationMinutes === null) {
     if (!isPlaying && !isPaused) {
       return {
-        details: "Brain.fm",
+        details: "FocusFlow",
         state: "Ready to focus",
         largeImageKey: "app_icon",
-        largeImageText: "Brain.fm",
+        largeImageText: "FocusFlow",
       };
     }
 
@@ -68,7 +68,7 @@ export function buildDiscordPresencePayload(params: {
       state: isPaused ? `Paused${trackInfo}` : `Deep Work${trackInfo}`,
       startTimestamp: isPlaying ? Math.floor((Date.now() - elapsedMs) / 1000) : undefined,
       largeImageKey: "app_icon",
-      largeImageText: "Brain.fm",
+      largeImageText: "FocusFlow",
       smallImageKey: isPaused ? "pause" : "focus",
       smallImageText: isPaused ? "Paused" : "Focusing",
     };
@@ -91,7 +91,7 @@ export function buildDiscordPresencePayload(params: {
         details: `Focusing: ${goalText}`,
         state: `Paused • ${isWork ? "Work" : "Break"}${goalStatus}`,
         largeImageKey: "app_icon",
-        largeImageText: "Brain.fm",
+        largeImageText: "FocusFlow",
         smallImageKey: "pause",
         smallImageText: "Paused",
       };
@@ -103,7 +103,7 @@ export function buildDiscordPresencePayload(params: {
         state: `Głęboka praca${goalStatus}`,
         endTimestamp,
         largeImageKey: "app_icon",
-        largeImageText: "Brain.fm",
+        largeImageText: "FocusFlow",
         smallImageKey: "focus",
         smallImageText: "Focus Phase",
       };
@@ -114,7 +114,7 @@ export function buildDiscordPresencePayload(params: {
       state: "Regeneracja i odpoczynek",
       endTimestamp,
       largeImageKey: "app_icon",
-      largeImageText: "Brain.fm",
+      largeImageText: "FocusFlow",
       smallImageKey: "break",
       smallImageText: "Break Phase",
     };
@@ -131,7 +131,7 @@ export function buildDiscordPresencePayload(params: {
       details: `Focusing: ${goalText}`,
       state: "Focus Paused",
       largeImageKey: "app_icon",
-      largeImageText: "Brain.fm",
+      largeImageText: "FocusFlow",
       smallImageKey: "pause",
       smallImageText: "Paused",
     };
@@ -142,7 +142,7 @@ export function buildDiscordPresencePayload(params: {
     state: "Session in progress",
     endTimestamp,
     largeImageKey: "app_icon",
-    largeImageText: "Brain.fm",
+    largeImageText: "FocusFlow",
     smallImageKey: "focus",
     smallImageText: "Focusing",
   };
