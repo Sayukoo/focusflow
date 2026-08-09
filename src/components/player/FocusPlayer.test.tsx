@@ -1,22 +1,22 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
-import { DEFAULT_TIMER_SETTINGS, type Track } from "../types";
-import { FocusPlayer } from "./player/FocusPlayer";
+import { DEFAULT_TIMER_SETTINGS, type Track } from "../../types";
+import { FocusPlayer } from "./FocusPlayer";
 
-vi.mock("./library/MusicLibrary", () => ({
+vi.mock("../library/MusicLibrary", () => ({
   MusicLibrary: () => null,
 }));
 
-vi.mock("./settings/ProfilePicker", () => ({
+vi.mock("../settings/ProfilePicker", () => ({
   ProfilePicker: () => null,
 }));
 
-vi.mock("./audio/RemotePlayer", () => ({
+vi.mock("../audio/RemotePlayer", () => ({
   RemotePlayer: () => null,
 }));
 
-vi.mock("./settings/TimerSettings", () => ({
+vi.mock("../settings/TimerSettings", () => ({
   TimerSettings: () => null,
 }));
 

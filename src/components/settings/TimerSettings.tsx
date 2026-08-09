@@ -11,8 +11,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
-  INTERVAL_BREAK_PRESETS,
-  INTERVAL_WORK_PRESETS,
   type TimerKind,
   type TimerSettings as TimerSettingsState,
   type TimerUnit,
@@ -29,7 +27,10 @@ import {
 import type { MiniGoal } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
-import { MiniGoalChecklist } from "../tasks/MiniGoalChecklist";
+import { TimerTypeTabs } from "./timer/TimerTypeTabs";
+import { TimerCueToggles } from "./timer/TimerCueToggles";
+import { TimerDurationControls } from "./timer/TimerDurationControls";
+import { TimerGoalSection } from "./timer/TimerGoalSection";
 
 interface TimerSettingsProps {
   open: boolean;
@@ -492,99 +493,16 @@ export const TimerSettings = memo(function TimerSettings({
               className="timer-settings-body"
               layout={!shouldReduceMotion}
             >
-              <div
-                className="timer-tabs timer-tabs--primary"
-                role="tablist"
-                aria-label="Timer type"
-              >
-                <TimerTab
-                  active={settings.kind === "intervals"}
-                  icon="intervals"
-                  label="Intervals"
-                  reducedMotion={shouldReduceMotion}
-                  onClick={() => chooseKind("intervals")}
-                />
-                <TimerTab
-                  active={settings.kind === "timer"}
-                  icon="stopwatch"
-                  label="Timer"
-                  reducedMotion={shouldReduceMotion}
-                  onClick={() => chooseKind("timer")}
-                />
-                <TimerTab
-                  active={settings.kind === "infinite"}
-                  icon="infinity"
-                  label="Infinite"
-                  reducedMotion={shouldReduceMotion}
-                  onClick={() => chooseKind("infinite")}
-                />
-              </div>
+              <TimerTypeTabs
+                kind={settings.kind}
+                shouldReduceMotion={shouldReduceMotion}
+                onChooseKind={chooseKind}
+              />
 
-              <div
-                className="timer-settings-toggle-strip"
-                role="group"
-                aria-label="Timer cue settings"
-              >
-                <KaTeXTooltip formula="\text{Pause when music pauses}">
-                  <label className="timer-toggle-row">
-                    <span>Pause</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.pauseWhenMusicPaused}
-                      aria-label="Pause timer when music is paused"
-                      onChange={(event) =>
-                        setDraftSettings({
-                          ...settings,
-                          pauseWhenMusicPaused: event.target.checked,
-                        })
-                      }
-                    />
-                    <span className="switch-visual" aria-hidden="true">
-                      <span />
-                    </span>
-                  </label>
-                </KaTeXTooltip>
-
-                <KaTeXTooltip formula="\text{Play a soft sound on phase changes}">
-                  <label className="timer-toggle-row">
-                    <span>Sound</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.phaseSoundEnabled}
-                      aria-label="Play a soft sound on work and break transitions"
-                      onChange={(event) =>
-                        setDraftSettings({
-                          ...settings,
-                          phaseSoundEnabled: event.target.checked,
-                        })
-                      }
-                    />
-                    <span className="switch-visual" aria-hidden="true">
-                      <span />
-                    </span>
-                  </label>
-                </KaTeXTooltip>
-
-                <KaTeXTooltip formula="\text{Play the calm female voice pack}">
-                  <label className="timer-toggle-row">
-                    <span>Voice</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.phaseVoiceEnabled}
-                      aria-label="Speak Polish work and break announcements"
-                      onChange={(event) =>
-                        setDraftSettings({
-                          ...settings,
-                          phaseVoiceEnabled: event.target.checked,
-                        })
-                      }
-                    />
-                    <span className="switch-visual" aria-hidden="true">
-                      <span />
-                    </span>
-                  </label>
-                </KaTeXTooltip>
-              </div>
+              <TimerCueToggles
+                settings={settings}
+                onChange={setDraftSettings}
+              />
 
               <motion.div
                 className="timer-copy"
@@ -606,297 +524,45 @@ export const TimerSettings = memo(function TimerSettings({
                 </p>
               </motion.div>
 
-              {settings.kind === "timer" ? (
-                <>
-                  <motion.div
-                    className="timer-presets"
-                    layout={!shouldReduceMotion ? "position" : false}
-                  >
-                    {TIMER_PRESETS.map((minutes) => (
-                      <button
-                        key={minutes}
-                        type="button"
-                        className={
-                          settings.durationMinutes === minutes
-                            ? "timer-preset is-active"
-                            : "timer-preset"
-                        }
-                        aria-label={`Timer duration ${minutes} minutes`}
-                        aria-pressed={settings.durationMinutes === minutes}
-                        onClick={() => choosePreset(minutes)}
-                      >
-                        {minutes < 60 ? `${minutes} min` : `${minutes / 60} hr`}
-                      </button>
-                    ))}
-                  </motion.div>
+              <TimerDurationControls
+                settings={settings}
+                customAmount={customAmount}
+                customUnit={customUnit}
+                shouldReduceMotion={shouldReduceMotion}
+                onCustomAmountChange={setCustomAmount}
+                onCustomUnitChange={setCustomUnit}
+                onChoosePreset={choosePreset}
+                onChooseIntervalPreset={chooseIntervalPreset}
+                onApplyCustom={applyCustom}
+              />
 
-                  <motion.div
-                    className="timer-custom"
-                    layout={!shouldReduceMotion ? "position" : false}
-                  >
-                    <input
-                      type="number"
-                      min="1"
-                      max={customUnit === "hr" ? 24 : 1440}
-                      placeholder="Custom amount"
-                      value={customAmount}
-                      aria-label="Custom timer amount"
-                      onChange={(event) => setCustomAmount(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") applyCustom();
-                      }}
-                      onBlur={applyCustom}
-                    />
-                    <div
-                      className="timer-unit-toggle"
-                      role="group"
-                      aria-label="Timer unit"
-                    >
-                      <button
-                        type="button"
-                        className={customUnit === "min" ? "is-active" : undefined}
-                        aria-label="Minutes"
-                        aria-pressed={customUnit === "min"}
-                        onClick={() => {
-                          setCustomUnit("min");
-                          if (customAmount) {
-                            const hours = Number(customAmount);
-                            setCustomAmount(
-                              String(Math.max(1, Math.round(hours * 60))),
-                            );
-                          }
-                        }}
-                      >
-                        min
-                      </button>
-                      <button
-                        type="button"
-                        className={customUnit === "hr" ? "is-active" : undefined}
-                        aria-label="Hours"
-                        aria-pressed={customUnit === "hr"}
-                        onClick={() => {
-                          setCustomUnit("hr");
-                          if (customAmount) {
-                            const minutes = Number(customAmount);
-                            setCustomAmount(
-                              String(Math.max(1, Math.round(minutes / 60))),
-                            );
-                          }
-                        }}
-                      >
-                        hrs
-                      </button>
-                    </div>
-                  </motion.div>
-                </>
-              ) : null}
-
-              {settings.kind === "intervals" ? (
-                <motion.div
-                  className="timer-interval-pairs"
-                  layout={!shouldReduceMotion ? "position" : false}
-                >
-                  <motion.div
-                    className="timer-interval-group"
-                    layout={!shouldReduceMotion ? "position" : false}
-                  >
-                    <div className="timer-interval-heading">
-                      <span>Work</span>
-                      <strong>{settings.workDurationMinutes} min</strong>
-                    </div>
-                    <div
-                      className="timer-interval-presets"
-                      role="group"
-                      aria-label="Work duration presets"
-                    >
-                      {INTERVAL_WORK_PRESETS.map((minutes) => (
-                        <button
-                          key={minutes}
-                          type="button"
-                          className={
-                            settings.workDurationMinutes === minutes
-                              ? "timer-interval-preset is-active"
-                              : "timer-interval-preset"
-                          }
-                          aria-label={`Work time ${minutes} minutes`}
-                          aria-pressed={settings.workDurationMinutes === minutes}
-                          onClick={() => chooseIntervalPreset("work", minutes)}
-                        >
-                          {minutes}m
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                  <motion.div
-                    className="timer-interval-group"
-                    layout={!shouldReduceMotion ? "position" : false}
-                  >
-                    <div className="timer-interval-heading">
-                      <span>Break</span>
-                      <strong>{settings.breakDurationMinutes} min</strong>
-                    </div>
-                    <div
-                      className="timer-interval-presets"
-                      role="group"
-                      aria-label="Break duration presets"
-                    >
-                      {INTERVAL_BREAK_PRESETS.map((minutes) => (
-                        <button
-                          key={minutes}
-                          type="button"
-                          className={
-                            settings.breakDurationMinutes === minutes
-                              ? "timer-interval-preset is-active"
-                              : "timer-interval-preset"
-                          }
-                          aria-label={`Break time ${minutes} minutes`}
-                          aria-pressed={settings.breakDurationMinutes === minutes}
-                          onClick={() => chooseIntervalPreset("break", minutes)}
-                        >
-                          {minutes}m
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                </motion.div>
-              ) : null}
-
-              <motion.div
-                className="timer-goal-field"
-                layout={!shouldReduceMotion ? "position" : false}
-              >
-                <div className="timer-goal-label-row">
-                  <label htmlFor="timer-work-goal">
-                    {settings.kind === "infinite" ? "Finite goal" : "Work goal"}
-                  </label>
-                  {settings.kind !== "infinite" ? (
-                    <KaTeXTooltip
-                      formula={
-                        miniGoalsLoading
-                          ? "\\text{Generating mini-goals}"
-                          : "\\text{Generate mini-goals}"
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={
-                          miniGoalsLoading
-                            ? "mini-goals-icon-button is-loading"
-                            : "mini-goals-icon-button"
-                        }
-                        aria-label={
-                          miniGoalsLoading
-                            ? "Generating mini goals"
-                            : "Generate mini goals"
-                        }
-                        aria-busy={miniGoalsLoading}
-                        disabled={miniGoalsLoading}
-                        onClick={() => void requestMiniGoals()}
-                      >
-                        <Icon name="sparkles" size={15} />
-                      </button>
-                    </KaTeXTooltip>
-                  ) : null}
-                </div>
-                <div className="timer-goal-input-wrap">
-                  <textarea
-                    ref={goalInputRef}
-                    id="timer-work-goal"
-                    rows={3}
-                    maxLength={300}
-                    placeholder="Required for finite mode"
-                    value={goalDraft}
-                    aria-label={
-                      settings.kind === "infinite" ? "Finite goal" : "Work goal"
-                    }
-                    aria-invalid={Boolean(goalError)}
-                    aria-describedby={goalError ? "timer-goal-error" : undefined}
-                    required={settings.kind !== "infinite"}
-                    onChange={(event) => {
-                      const nextGoal = event.target.value;
-                      setMiniGoalsError("");
-                      setClarificationQuestion("");
-                      setClarificationAnswer("");
-                      setGoalDraft(nextGoal);
-                      setDraftSettings((current) => ({
-                        ...current,
-                        goal: normalizeGoal(nextGoal),
-                      }));
-                      if (nextGoal.trim()) setGoalError("");
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        commitGoalDraft();
-                      }
-                    }}
-                    onBlur={commitGoalDraft}
-                  />
-                  <span aria-hidden="true">{goalDraft.length}/300</span>
-                </div>
-                {goalError ? (
-                  <p id="timer-goal-error" className="timer-goal-error" role="alert">
-                    {goalError}
-                  </p>
-                ) : null}
-                {miniGoalsLoading ? (
-                  <p className="mini-goals-status" role="status" aria-live="polite">
-                    Generating…
-                  </p>
-                ) : null}
-                {miniGoalsError ? (
-                  <p className="mini-goals-status is-error" role="alert">
-                    {miniGoalsError}
-                  </p>
-                ) : null}
-                {clarificationQuestion ? (
-                  <div className="mini-goals-clarification" role="group">
-                    <p className="mini-goals-clarification-question">
-                      {clarificationQuestion}
-                    </p>
-                    <div className="mini-goals-clarification-controls">
-                      <input
-                        type="text"
-                        value={clarificationAnswer}
-                        maxLength={240}
-                        aria-label="Clarification answer"
-                        placeholder="What should come first?"
-                        onChange={(event) =>
-                          setClarificationAnswer(event.target.value)
-                        }
-                      />
-                      <button
-                        type="button"
-                        aria-label="Generate mini goals from clarification"
-                        disabled={
-                          miniGoalsLoading || !clarificationAnswer.trim()
-                        }
-                        onClick={() =>
-                          void requestMiniGoals(clarificationAnswer)
-                        }
-                      >
-                        Use answer
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                {miniGoals.length > 0 ? (
-                  <div className="mini-goals-card" aria-label="Mini goals">
-                    <div className="mini-goals-card-heading">
-                      <Icon name="sparkles" size={14} />
-                      <span>Mini goals</span>
-                    </div>
-                    <MiniGoalChecklist
-                      items={miniGoals}
-                      mainGoal={goalDraft}
-                      userAboutMe={settings.userAboutMe}
-                      workDurationMinutes={settings.workDurationMinutes}
-                      label="Mini goals"
-                      onChange={handleDraftMiniGoalsChange}
-                    />
-                  </div>
-                ) : null}
-              </motion.div>
+              <TimerGoalSection
+                settings={settings}
+                goalDraft={goalDraft}
+                goalError={goalError}
+                miniGoals={miniGoals}
+                miniGoalsLoading={miniGoalsLoading}
+                miniGoalsError={miniGoalsError}
+                clarificationQuestion={clarificationQuestion}
+                clarificationAnswer={clarificationAnswer}
+                shouldReduceMotion={shouldReduceMotion}
+                goalInputRef={goalInputRef}
+                onGoalChange={(nextGoal) => {
+                  setMiniGoalsError("");
+                  setClarificationQuestion("");
+                  setClarificationAnswer("");
+                  setGoalDraft(nextGoal);
+                  setDraftSettings((current) => ({
+                    ...current,
+                    goal: normalizeGoal(nextGoal),
+                  }));
+                  if (nextGoal.trim()) setGoalError("");
+                }}
+                onGoalCommit={commitGoalDraft}
+                onRequestMiniGoals={requestMiniGoals}
+                onClarificationAnswerChange={setClarificationAnswer}
+                onMiniGoalsChange={handleDraftMiniGoalsChange}
+              />
 
               <div className="timer-settings-actions">
                 <button
@@ -931,43 +597,3 @@ export const TimerSettings = memo(function TimerSettings({
     previous.onChange === next.onChange
   );
 });
-
-interface TimerTabProps {
-  active: boolean;
-  icon: "infinity" | "stopwatch" | "intervals";
-  label: string;
-  reducedMotion: boolean;
-  onClick: () => void;
-}
-
-function TimerTab({
-  active,
-  icon,
-  label,
-  reducedMotion,
-  onClick,
-}: TimerTabProps) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      aria-label={label}
-      className={active ? "timer-tab is-active" : "timer-tab"}
-      onClick={onClick}
-    >
-      {active ? (
-        <motion.span
-          className="timer-tab-indicator"
-          layoutId="timer-tab-indicator"
-          transition={reducedMotion ? { duration: 0 } : undefined}
-          aria-hidden="true"
-        />
-      ) : null}
-      <span className="timer-tab-content">
-        <Icon name={icon} size={22} />
-        <span>{label}</span>
-      </span>
-    </button>
-  );
-}

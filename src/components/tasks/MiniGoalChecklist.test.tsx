@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MiniGoalChecklist } from "./tasks/MiniGoalChecklist";
-import type { MiniGoal } from "../types";
+import type { MiniGoal } from "../../types";
+import { MiniGoalChecklist } from "./MiniGoalChecklist";
 
 const items: MiniGoal[] = [
   {

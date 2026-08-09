@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TimerSettings } from "./settings/TimerSettings";
-import { DEFAULT_TIMER_SETTINGS, type TimerSettings as TimerSettingsState } from "../types";
+import { DEFAULT_TIMER_SETTINGS, type TimerSettings as TimerSettingsState } from "../../types";
+import { TimerSettings } from "./TimerSettings";
 
 function intervalSettings(): TimerSettingsState {
   return {

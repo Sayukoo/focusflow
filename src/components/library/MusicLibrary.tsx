@@ -1,8 +1,11 @@
-import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { getTrackCategory, type TrackCategory } from "../../lib/gemini";
 import type { PlaybackQueue, Track } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
+import { LibraryDropzone } from "./LibraryDropzone";
+import { LibraryHeader } from "./LibraryHeader";
+import { TrackCard } from "./TrackCard";
 
 interface MusicLibraryProps {
   open: boolean;
@@ -49,8 +52,6 @@ export const MusicLibrary = memo(function MusicLibrary({
   onToggleFavorite,
   onPlayQueue,
 }: MusicLibraryProps) {
-  const [dragActive, setDragActive] = useState(false);
-  const [linkValue, setLinkValue] = useState("");
   const [activeTab, setActiveTab] = useState<LibraryTab>(
     favoritesOnly ? "favorites" : "featured",
   );
@@ -110,7 +111,6 @@ export const MusicLibrary = memo(function MusicLibrary({
 
   if (!open) return null;
 
-  const escapedDir = musicDir.replace(/\\/g, "\\\\");
   const baseTracks =
     activeTab === "favorites"
       ? tracks.filter((track) => favoriteTrackIds.includes(track.id))
@@ -166,105 +166,24 @@ export const MusicLibrary = memo(function MusicLibrary({
     setGenreFilter(category);
   };
 
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (!busy) setDragActive(true);
-  };
-
-  const handleDragLeave = () => setDragActive(false);
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragActive(false);
-    if (!busy) {
-      onDropFiles(Array.from(event.dataTransfer.files));
-    }
-  };
-
-  const submitLink = (value: string) => {
-    const url = value.trim();
-    if (!url || busy) return;
-    onAddLink(url);
-    setLinkValue("");
-  };
-
   return (
     <div className="library-overlay" role="dialog" aria-modal="true" aria-label="Library">
       <button className="library-backdrop" aria-label="Close library" onClick={onClose} />
       <aside className="library-panel library-manager">
-        <header className="library-header">
-          <div className="library-heading">
-            <span className="library-glyph" aria-hidden="true">
-              <Icon name="music-library" size={22} />
-            </span>
-            <div>
-              <strong className="library-title">{activeProfileName}</strong>
-              <span className="library-breadcrumb">FocusFlow / profile music</span>
-            </div>
-          </div>
+        <LibraryHeader
+          activeProfileName={activeProfileName}
+          musicDir={musicDir}
+          busy={busy}
+          onOpenFolder={onOpenFolder}
+          onClose={onClose}
+        />
 
-          <div className="library-actions">
-            <KaTeXTooltip formula={`\\text{Open in Explorer:}~\\texttt{${escapedDir}}`}>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Open folder in Explorer"
-                disabled={busy}
-                onClick={onOpenFolder}
-              >
-                <Icon name="folder" size={18} />
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula="\text{Close}">
-              <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-                <Icon name="close" size={18} />
-              </button>
-            </KaTeXTooltip>
-          </div>
-        </header>
-
-        <div
-          className={dragActive ? "library-dropzone is-dragging" : "library-dropzone"}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <span className="dropzone-icon" aria-hidden="true">
-            <Icon name="folder-open" size={25} />
-            <Icon name="plus" size={12} />
-          </span>
-          <strong>{dragActive ? "Release to upload" : "Drop music here"}</strong>
-          <input
-            className="dropzone-link-input"
-            type="url"
-            value={linkValue}
-            placeholder="Paste a music link"
-            aria-label="Paste a YouTube, Spotify, SoundCloud or TikTok link"
-            disabled={busy}
-            onChange={(event) => setLinkValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                submitLink(event.currentTarget.value);
-              }
-            }}
-            onPaste={(event) => {
-              const pasted = event.clipboardData.getData("text");
-              if (!pasted.trim()) return;
-              event.preventDefault();
-              submitLink(pasted);
-            }}
-          />
-          <button
-            type="button"
-            className="upload-button"
-            disabled={busy}
-            onClick={onImport}
-          >
-            <Icon name="plus" size={16} />
-            Upload files
-          </button>
-        </div>
+        <LibraryDropzone
+          busy={busy}
+          onImport={onImport}
+          onAddLink={onAddLink}
+          onDropFiles={onDropFiles}
+        />
 
         <div className="library-tabs" role="tablist" aria-label="Music library views">
           {(
@@ -382,129 +301,23 @@ export const MusicLibrary = memo(function MusicLibrary({
           </div>
         ) : (
           <div className="library-grid">
-            {visibleTracks.map((track) => {
-              const active = track.id === currentTrackId;
-              const expanded = track.id === expandedTrackId;
-              const favorite = favoriteTrackIds.includes(track.id);
-              const category = categoryByTrack.get(track.id) ?? null;
-              return (
-                <article
-                  key={track.id}
-                  className={[
-                    "track-card",
-                    active ? "is-active" : "",
-                    expanded ? "is-expanded" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                >
-                  <KaTeXTooltip
-                    placement="top"
-                    formula="\text{Play}"
-                  >
-                    <button
-                      type="button"
-                      className="track-card-main"
-                      aria-label={`Play ${track.title}`}
-                      aria-current={active ? "true" : undefined}
-                      onClick={() => {
-                        setExpandedTrackId(track.id);
-                        onSelect(track.id);
-                      }}
-                    >
-                      <span
-                        className="track-card-art"
-                        aria-hidden="true"
-                        style={
-                          track.thumbnail
-                            ? {
-                                backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${track.thumbnail}")`,
-                              }
-                            : undefined
-                        }
-                      >
-                        <Icon name="music" size={25} />
-                        <span className="track-card-play">
-                          <Icon name="play" size={12} />
-                        </span>
-                      </span>
-                      <span className="track-card-title">{track.title}</span>
-                      <span className="track-card-meta track-card-author">
-                        {track.author ?? getSourceLabel(track)}
-                      </span>
-                    </button>
-                  </KaTeXTooltip>
-                  {expanded ? (
-                    <div className="track-card-details">
-                      <div className="track-detail-grid">
-                        <div>
-                          <span>GATUNEK</span>
-                          {category ? (
-                            <KaTeXTooltip
-                              placement="bottom"
-                              formula={`\\text{Filter genre:}~\\text{${escapeTex(formatCategory(category))}}`}
-                            >
-                              <button
-                                type="button"
-                                className="track-category-button"
-                                aria-label={`Filter genre ${formatCategory(category)}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  selectGenre(category);
-                                }}
-                              >
-                                {formatCategory(category)}
-                              </button>
-                            </KaTeXTooltip>
-                          ) : (
-                            <strong>AI pending</strong>
-                          )}
-                        </div>
-                        <div>
-                          <span>ŹRÓDŁO</span>
-                          <strong>{getSourceLabel(track)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  <KaTeXTooltip
-                    placement="left"
-                    formula={favorite ? "\\text{Remove favorite}" : "\\text{Add favorite}"}
-                  >
-                    <button
-                      type="button"
-                      className={
-                        favorite
-                          ? "track-card-favorite is-favorite"
-                          : "track-card-favorite"
-                      }
-                      aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
-                      aria-pressed={favorite}
-                      onClick={() => onToggleFavorite(track.id)}
-                    >
-                      <Icon name="heart" size={14} />
-                    </button>
-                  </KaTeXTooltip>
-                  <KaTeXTooltip
-                    placement="left"
-                    formula={`\\text{Delete from profile:}~\\texttt{${escapeTex(track.filename)}}`}
-                  >
-                    <button
-                      type="button"
-                      className="track-card-delete"
-                      aria-label={`Delete ${track.title} from ${activeProfileName}`}
-                      disabled={busy}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRemove(track);
-                      }}
-                    >
-                      <Icon name="trash" size={15} />
-                    </button>
-                  </KaTeXTooltip>
-                </article>
-              );
-            })}
+            {visibleTracks.map((track) => (
+              <TrackCard
+                key={track.id}
+                track={track}
+                active={track.id === currentTrackId}
+                expanded={track.id === expandedTrackId}
+                favorite={favoriteTrackIds.includes(track.id)}
+                category={categoryByTrack.get(track.id) ?? null}
+                activeProfileName={activeProfileName}
+                busy={busy}
+                onSelect={onSelect}
+                onToggleExpanded={(id) => setExpandedTrackId(id)}
+                onSelectGenre={selectGenre}
+                onToggleFavorite={onToggleFavorite}
+                onRemove={onRemove}
+              />
+            ))}
           </div>
         )}
       </aside>
@@ -541,12 +354,4 @@ function escapeTex(value: string): string {
 
 function formatCategory(category: TrackCategory): string {
   return category.replace(/_/g, " ");
-}
-
-function getSourceLabel(track: Track): string {
-  if (track.source === "youtube") return "YouTube";
-  if (track.source === "spotify") return "Spotify";
-  if (track.source === "soundcloud") return "SoundCloud";
-  if (track.source === "tiktok") return "TikTok";
-  return `${track.extension.toUpperCase()} · local`;
 }

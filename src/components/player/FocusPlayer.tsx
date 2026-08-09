@@ -23,13 +23,15 @@ import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { MobileMenu } from "../ui/MobileMenu";
 import { KeyboardShortcutsModal } from "../ui/KeyboardShortcutsModal";
 import { MiniGoalChecklist } from "../tasks/MiniGoalChecklist";
-import { MusicLibrary } from "../library/MusicLibrary";
 import { ProfilePicker, type FocusAnalyticsSummary } from "../settings/ProfilePicker";
-import { TimerSettings as TimerSettingsModal } from "../settings/TimerSettings";
 import { RemotePlayer } from "../audio/RemotePlayer";
+import { MusicLibrary } from "../library/MusicLibrary";
+import { TimerSettings as TimerSettingsModal } from "../settings/TimerSettings";
 import { PlaybackControls } from "./PlaybackControls";
 import { HeaderControls } from "./HeaderControls";
 import { ThumbnailBackground } from "./ThumbnailBackground";
+import { ConfettiOverlay } from "./ConfettiOverlay";
+import { TrackMetaDisplay } from "./TrackMetaDisplay";
 
 interface FocusPlayerProps {
   tracks: Track[];
@@ -94,34 +96,10 @@ interface FocusPlayerProps {
   onSetWindowPinned: (pinned: boolean) => void | Promise<void>;
 }
 
-interface ConfettiPiece {
-  id: number;
-  x: string;
-  y: string;
-  rotation: string;
-  color: string;
-  delay: string;
-}
-
 const CONFETTI_TAP_COUNT = 15;
-const CONFETTI_PIECES: ConfettiPiece[] = [
-  { id: 1, x: "-8rem", y: "-7rem", rotation: "-260deg", color: "#ffd6a0", delay: "0ms" },
-  { id: 2, x: "-5.5rem", y: "-9rem", rotation: "180deg", color: "#bcecff", delay: "40ms" },
-  { id: 3, x: "-2rem", y: "-6rem", rotation: "-120deg", color: "#f5b7d5", delay: "80ms" },
-  { id: 4, x: "2.5rem", y: "-8.5rem", rotation: "220deg", color: "#ffe4ae", delay: "20ms" },
-  { id: 5, x: "6rem", y: "-6.5rem", rotation: "-180deg", color: "#c7f3d0", delay: "100ms" },
-  { id: 6, x: "9rem", y: "-3rem", rotation: "260deg", color: "#bcecff", delay: "60ms" },
-  { id: 7, x: "7.5rem", y: "1rem", rotation: "-220deg", color: "#ffd6a0", delay: "120ms" },
-  { id: 8, x: "5rem", y: "4rem", rotation: "160deg", color: "#f5b7d5", delay: "30ms" },
-  { id: 9, x: "1rem", y: "5rem", rotation: "-300deg", color: "#ffe4ae", delay: "90ms" },
-  { id: 10, x: "-3rem", y: "4rem", rotation: "200deg", color: "#c7f3d0", delay: "50ms" },
-  { id: 11, x: "-7rem", y: "2rem", rotation: "-160deg", color: "#bcecff", delay: "110ms" },
-  { id: 12, x: "-9rem", y: "-1rem", rotation: "280deg", color: "#f5b7d5", delay: "70ms" },
-];
 
 export function FocusPlayer({
   tracks,
-  musicDir,
   currentTrack,
   profiles,
   activeProfileId,
@@ -130,7 +108,6 @@ export function FocusPlayer({
   profilePickerOpen,
   favoriteTrackIds,
   favoritesOnly,
-  currentTrackId,
   isPlaying,
   volume,
   progress,
@@ -142,7 +119,6 @@ export function FocusPlayer({
   timerSettings,
   timerSettingsOpen,
   libraryOpen,
-  busy,
   error,
   browserMode,
   windowPinned,
@@ -154,13 +130,7 @@ export function FocusPlayer({
   onUserAboutMeChange,
   onSetFavoritesOnly,
   onToggleFavorite,
-  onOpenFolder,
-  onImport,
-  onAddLink,
-  onDropFiles,
   onRefresh,
-  onSelectTrack,
-  onRemoveTrack,
   onTogglePlay,
   onNext,
   onPrevious,
@@ -178,8 +148,17 @@ export function FocusPlayer({
   onTimerSettingsChange,
   onChangeTimerSettings,
   onClearError,
-  onPlayQueue,
   onSetWindowPinned,
+  musicDir,
+  currentTrackId,
+  busy = false,
+  onImport,
+  onAddLink,
+  onDropFiles,
+  onOpenFolder,
+  onSelectTrack,
+  onRemoveTrack,
+  onPlayQueue,
 }: FocusPlayerProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hotkeysModalOpen, setHotkeysModalOpen] = useState(false);
@@ -192,6 +171,18 @@ export function FocusPlayer({
     onToggleTimer: () => (timerSettingsOpen ? onCloseTimerSettings() : onOpenTimerSettings()),
     onToggleProfile: () => onToggleProfilePicker(!profilePickerOpen),
     onToggleShortcuts: () => setHotkeysModalOpen((prev) => !prev),
+    onSpeedUp: () => {
+      if (onPlaybackRateChange) {
+        const nextRate = Math.min(2.0, Math.round((playbackRate + 0.1) * 10) / 10);
+        onPlaybackRateChange(nextRate);
+      }
+    },
+    onSpeedDown: () => {
+      if (onPlaybackRateChange) {
+        const nextRate = Math.max(0.5, Math.round((playbackRate - 0.1) * 10) / 10);
+        onPlaybackRateChange(nextRate);
+      }
+    },
     onEscape: () => {
       if (hotkeysModalOpen) {
         setHotkeysModalOpen(false);
@@ -214,6 +205,7 @@ export function FocusPlayer({
       }
     },
   });
+
   const [categoryStatus, setCategoryStatus] =
     useState<TrackCategoryStatus>("idle");
   const [currentCategory, setCurrentCategory] = useState<TrackCategory | null>(
@@ -377,69 +369,11 @@ export function FocusPlayer({
     }
   };
 
-
-
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId),
     [activeProfileId, profiles],
   );
   const profileLabel = activeProfile?.name ?? "Default profile";
-
-  const coverStyle = useMemo(() => {
-    if (!currentTrack?.thumbnail) return undefined;
-    return {
-      backgroundImage: `linear-gradient(135deg, rgba(20, 30, 48, 0.2), rgba(10, 15, 25, 0.6)), url("${currentTrack.thumbnail}")`,
-    };
-  }, [currentTrack?.thumbnail]);
-
-  const sourceLabel = useMemo(() => {
-    if (!currentTrack) return "No track selected";
-    if (currentTrack.source === "youtube") return "YouTube";
-    if (currentTrack.source === "spotify") return "Spotify";
-    if (currentTrack.source === "soundcloud") return "SoundCloud";
-    if (currentTrack.source === "tiktok") return "TikTok";
-    return `${currentTrack.extension.toUpperCase()} file`;
-  }, [currentTrack]);
-
-  const categoryLabel = useMemo(() => {
-    if (categoryStatus === "categorizing") return "Classifying…";
-    if (currentCategory) return currentCategory.toUpperCase();
-    if (categoryStatus === "invalid-api-key") return "Invalid Gemini key";
-    if (categoryStatus === "missing-configuration" || categoryStatus === "no-api-key") return "AI setup";
-    if (categoryStatus === "rate-limited") return "Retry AI";
-    if (categoryStatus === "request-failed") return "Retry AI";
-    return "AI category";
-  }, [categoryStatus, currentCategory]);
-
-  const categoryTooltip = useMemo(() => {
-    if (categoryStatus === "categorizing") {
-      return "\\text{AI categorization in progress}";
-    }
-    if (currentCategory) {
-      return `\\text{AI Genre:}~\\text{${escapeTex(currentCategory.toUpperCase())}}`;
-    }
-    if (categoryStatus === "invalid-api-key") {
-      return "\\text{VITE\\_GEMINI\\_API\\_KEY is invalid}";
-    }
-    if (categoryStatus === "missing-configuration" || categoryStatus === "no-api-key") {
-      return "\\text{Add VITE\\_GEMINI\\_API\\_KEY to .env}";
-    }
-    if (categoryStatus === "rate-limited") {
-      return "\\text{Rate limited. Click to retry}";
-    }
-    return "\\text{Click to categorize with Gemini}";
-  }, [categoryStatus, currentCategory]);
-
-  const categoryNeedsAction = !currentCategory;
-  const categoryLoading = categoryStatus === "categorizing";
-  const categoryActionLabel =
-    categoryStatus === "categorizing"
-      ? "Classifying track"
-      : categoryStatus === "missing-configuration" || categoryStatus === "no-api-key"
-        ? "Set up Gemini to categorize this track"
-        : categoryStatus === "request-failed" || categoryStatus === "rate-limited"
-          ? "Retry AI category"
-          : "Categorize track with Gemini AI";
 
   const isRemote = isRemoteTrack(currentTrack);
 
@@ -499,6 +433,19 @@ export function FocusPlayer({
     }, 2_000);
   };
 
+  const handleSetFavoriteBursting = (bursting: boolean) => {
+    if (favoriteBurstTimerRef.current !== null) {
+      window.clearTimeout(favoriteBurstTimerRef.current);
+    }
+    setFavoriteBursting(bursting);
+    if (bursting) {
+      favoriteBurstTimerRef.current = window.setTimeout(() => {
+        favoriteBurstTimerRef.current = null;
+        setFavoriteBursting(false);
+      }, 760);
+    }
+  };
+
   const shellClasses = [
     "focus-shell",
     `mode-${mode}`,
@@ -517,29 +464,7 @@ export function FocusPlayer({
       />
       <div className="focus-atmosphere" aria-hidden="true" />
       <div className="focus-vignette" aria-hidden="true" />
-      {confettiBursting ? (
-        <div
-          key={confettiBurstId}
-          className="timer-confetti"
-          aria-hidden="true"
-        >
-          {CONFETTI_PIECES.map((piece) => (
-            <span
-              key={piece.id}
-              className="timer-confetti-piece"
-              style={
-                {
-                  "--confetti-x": piece.x,
-                  "--confetti-y": piece.y,
-                  "--confetti-rotation": piece.rotation,
-                  "--confetti-color": piece.color,
-                  "--confetti-delay": piece.delay,
-                } as React.CSSProperties
-              }
-            />
-          ))}
-        </div>
-      ) : null}
+      {confettiBursting ? <ConfettiOverlay burstId={confettiBurstId} /> : null}
 
       <header className="focus-top">
         <div className="focus-top-left" />
@@ -550,8 +475,14 @@ export function FocusPlayer({
           volume={volume}
           onVolume={onVolume}
           onSetWindowPinned={onSetWindowPinned}
-          onToggleLibrary={onToggleLibrary}
-          onToggleProfilePicker={onToggleProfilePicker}
+          onToggleLibrary={(open) => {
+            if (open) onToggleProfilePicker(false);
+            onToggleLibrary(open);
+          }}
+          onToggleProfilePicker={(open) => {
+            if (open) onToggleLibrary(false);
+            onToggleProfilePicker(open);
+          }}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           mobileMenuOpen={mobileMenuOpen}
         />
@@ -649,116 +580,17 @@ export function FocusPlayer({
       </main>
 
       <footer className="focus-bottom">
-        <div className="now-playing">
-          <KaTeXTooltip
-            formula={
-              currentTrack
-                ? `\\text{${escapeTex(currentTrack.title)}}`
-                : "\\text{No track selected}"
-            }
-          >
-            <button
-              type="button"
-              className="cover"
-              aria-label={currentTrack?.title ?? "No track"}
-              style={coverStyle}
-              onClick={() => onToggleLibrary(true)}
-            >
-              <span className="cover-glow" aria-hidden="true">
-                <Icon name="music" size={28} />
-              </span>
-            </button>
-          </KaTeXTooltip>
-
-          <div className="now-meta">
-            <KaTeXTooltip
-              formula={
-                currentTrack
-                  ? `\\texttt{${escapeTex(currentTrack.filename)}}`
-                  : "\\text{Import your music}"
-              }
-            >
-              <button
-                type="button"
-                className="now-title"
-                onClick={() => onToggleLibrary(true)}
-              >
-                {currentTrack?.title ?? "—"}
-              </button>
-            </KaTeXTooltip>
-            <KaTeXTooltip formula={`\\text{${sourceLabel}}`}>
-              <span className="now-sub">{sourceLabel}</span>
-            </KaTeXTooltip>
-            <div className="now-chips">
-              <KaTeXTooltip formula={categoryTooltip}>
-                {categoryNeedsAction ? (
-                  <button
-                    type="button"
-                    className={[
-                      "chip",
-                      categoryLoading ? "is-loading" : "",
-                      categoryStatus === "request-failed" ? "is-error" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    aria-label={categoryActionLabel}
-                    aria-busy={categoryLoading}
-                    disabled={categoryLoading}
-                    onClick={() => {
-                      if (currentTrack) void requestCategory(currentTrack);
-                    }}
-                  >
-                    {categoryLabel}
-                  </button>
-                ) : (
-                  <span className="chip">{categoryLabel}</span>
-                )}
-              </KaTeXTooltip>
-            </div>
-          </div>
-
-          <div className="now-react">
-            <KaTeXTooltip formula="\text{Favorite}">
-              <button
-                type="button"
-                className={[
-                  "icon-btn",
-                  "ghost",
-                  "favorite-control",
-                  currentTrack && favoriteTrackIds.includes(currentTrack.id)
-                    ? "is-favorite"
-                    : "",
-                  favoriteBursting ? "is-bursting" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={
-                  currentTrack && favoriteTrackIds.includes(currentTrack.id)
-                    ? "Remove from favorites"
-                    : "Add to favorites"
-                }
-                aria-pressed={currentTrack ? favoriteTrackIds.includes(currentTrack.id) : false}
-                disabled={!currentTrack}
-                onClick={() => {
-                  if (!currentTrack) return;
-                  const wasFavorite = favoriteTrackIds.includes(currentTrack.id);
-                  onToggleFavorite(currentTrack.id);
-                  if (wasFavorite) return;
-                  if (favoriteBurstTimerRef.current !== null) {
-                    window.clearTimeout(favoriteBurstTimerRef.current);
-                  }
-                  setFavoriteBursting(true);
-                  favoriteBurstTimerRef.current = window.setTimeout(() => {
-                    favoriteBurstTimerRef.current = null;
-                    setFavoriteBursting(false);
-                  }, 760);
-                }}
-              >
-                <Icon name="heart" size={19} />
-              </button>
-            </KaTeXTooltip>
-          </div>
-        </div>
+        <TrackMetaDisplay
+          currentTrack={currentTrack}
+          favoriteTrackIds={favoriteTrackIds}
+          favoriteBursting={favoriteBursting}
+          categoryStatus={categoryStatus}
+          currentCategory={currentCategory}
+          onToggleLibrary={onToggleLibrary}
+          onToggleFavorite={onToggleFavorite}
+          onRequestCategory={(track) => void requestCategory(track)}
+          onSetFavoriteBursting={handleSetFavoriteBursting}
+        />
 
         <PlaybackControls
           isPlaying={isPlaying}
@@ -799,9 +631,9 @@ export function FocusPlayer({
           volume={volume}
           playbackRate={playbackRate}
           seekRequest={remoteSeekRequest}
+          onPlaying={onRemotePlaying}
           onTime={onRemoteTime}
           onDuration={onRemoteDuration}
-          onPlaying={onRemotePlaying}
           onEnded={onRemoteEnded}
           onError={onRemoteError}
         />
@@ -860,8 +692,4 @@ export function FocusPlayer({
       ) : null}
     </div>
   );
-}
-
-function escapeTex(value: string): string {
-  return value.replace(/([\\{}$&#^_~%])/g, "\\$1");
 }

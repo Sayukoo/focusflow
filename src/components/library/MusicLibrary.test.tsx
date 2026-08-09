@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Track } from "../types";
-import { MusicLibrary } from "./library/MusicLibrary";
+import type { Track } from "../../types";
+import { MusicLibrary } from "./MusicLibrary";
 
 const track: Track = {
   id: "track-1",

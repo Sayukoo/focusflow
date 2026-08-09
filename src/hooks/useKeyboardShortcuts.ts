@@ -8,6 +8,8 @@ interface KeyboardShortcutsOptions {
   onToggleTimer?: () => void;
   onToggleProfile?: () => void;
   onToggleShortcuts?: () => void;
+  onSpeedUp?: () => void;
+  onSpeedDown?: () => void;
   onEscape?: () => void;
   disabled?: boolean;
 }
@@ -20,6 +22,8 @@ export function useKeyboardShortcuts({
   onToggleTimer,
   onToggleProfile,
   onToggleShortcuts,
+  onSpeedUp,
+  onSpeedDown,
   onEscape,
   disabled = false,
 }: KeyboardShortcutsOptions): void {
@@ -87,6 +91,16 @@ export function useKeyboardShortcuts({
           event.preventDefault();
           onPrevious();
         }
+      } else if (event.key === "]") {
+        if (onSpeedUp) {
+          event.preventDefault();
+          onSpeedUp();
+        }
+      } else if (event.key === "[") {
+        if (onSpeedDown) {
+          event.preventDefault();
+          onSpeedDown();
+        }
       }
     };
 
@@ -97,6 +111,8 @@ export function useKeyboardShortcuts({
     onEscape,
     onNext,
     onPrevious,
+    onSpeedDown,
+    onSpeedUp,
     onToggleLibrary,
     onTogglePlay,
     onToggleProfile,

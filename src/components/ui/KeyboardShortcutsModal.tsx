@@ -24,6 +24,7 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
       { keys: ["Spacja"], description: "Start / Pauza sesji i audio" },
       { keys: ["→", "N"], description: "Następny utwór" },
       { keys: ["←", "P"], description: "Poprzedni utwór" },
+      { keys: ["[", "]"], description: "Zwolnij / Przyspiesz muzykę (±10%)" },
     ],
   },
   {
