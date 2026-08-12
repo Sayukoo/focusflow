@@ -169,7 +169,27 @@ export function normalizeTimerSettings(value: unknown): TimerSettings {
       typeof candidate.discordRpcEnabled === "boolean"
         ? candidate.discordRpcEnabled
         : DEFAULT_TIMER_SETTINGS.discordRpcEnabled,
+    appLockEnabled:
+      typeof candidate.appLockEnabled === "boolean"
+        ? candidate.appLockEnabled
+        : DEFAULT_TIMER_SETTINGS.appLockEnabled,
+    allowedApps: normalizeAllowedApps(candidate.allowedApps),
   };
+}
+
+const MAX_ALLOWED_APPS = 25;
+
+function normalizeAllowedApps(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const name = item.trim().toLowerCase().slice(0, 260);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    if (seen.size >= MAX_ALLOWED_APPS) break;
+  }
+  return Array.from(seen);
 }
 
 export function intervalDurationsMs(settings: TimerSettings): IntervalDurations {

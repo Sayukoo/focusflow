@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { stopAppLock } from "../lib/appLock";
 import {
   findTrackIndex,
   isRemoteTrack,
@@ -84,6 +85,12 @@ export function useAudioLibrary() {
     startSession,
     duckingMultiplier,
   });
+
+  useEffect(() => {
+    return () => {
+      void stopAppLock();
+    };
+  }, []);
 
   const library = useTrackLibrary({
     profileStoreRef,
@@ -711,6 +718,7 @@ export function useAudioLibrary() {
     favoritesOnly,
     isPlaying: engine.isPlaying,
     volume: engine.volume,
+    duckingMultiplier,
     progress: engine.progress,
     duration: engine.duration,
     elapsed,

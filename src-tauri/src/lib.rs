@@ -1,3 +1,6 @@
+mod app_lock;
+
+use app_lock::{AppLockState, RunningApp};
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -292,10 +295,44 @@ fn clear_discord_presence(state: tauri::State<'_, DiscordRpcState>) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+fn list_running_apps() -> Result<Vec<RunningApp>, String> {
+    app_lock::list_running_apps()
+}
+
+#[tauri::command]
+fn start_app_lock(
+    app: AppHandle,
+    state: tauri::State<'_, AppLockState>,
+    allowed: Vec<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let own_hwnd: Option<isize> = app
+        .webview_windows()
+        .values()
+        .next()
+        .and_then(|window| window.hwnd().ok())
+        .map(|hwnd| hwnd.0 as isize);
+    #[cfg(not(target_os = "windows"))]
+    let own_hwnd: Option<isize> = {
+        let _ = &app;
+        None
+    };
+
+    app_lock::start(&state, allowed, own_hwnd)
+}
+
+#[tauri::command]
+fn stop_app_lock(state: tauri::State<'_, AppLockState>) -> Result<(), String> {
+    app_lock::stop(&state);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(DiscordRpcState::new())
+        .manage(AppLockState::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -317,7 +354,10 @@ pub fn run() {
             delete_track,
             open_music_dir,
             update_discord_presence,
-            clear_discord_presence
+            clear_discord_presence,
+            list_running_apps,
+            start_app_lock,
+            stop_app_lock
         ])
         .setup(|app| {
             let _ = ensure_music_dir(app.handle().clone());

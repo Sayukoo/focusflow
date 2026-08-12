@@ -52,6 +52,8 @@ describe("timer clock", () => {
       phaseVoiceEnabled: false,
       voicePack: "system",
       discordRpcEnabled: true,
+      appLockEnabled: false,
+      allowedApps: [],
     };
     const infinite: TimerSettings = {
       kind: "infinite",
@@ -65,6 +67,8 @@ describe("timer clock", () => {
       phaseVoiceEnabled: false,
       voicePack: "system",
       discordRpcEnabled: true,
+      appLockEnabled: false,
+      allowedApps: [],
     };
 
     expect(timerLimitMs(timer)).toBe(1_500_000);
@@ -93,6 +97,8 @@ describe("timer clock", () => {
       phaseVoiceEnabled: true,
       voicePack: "calm-female",
       discordRpcEnabled: true,
+      appLockEnabled: false,
+      allowedApps: [],
     });
   });
 
@@ -167,6 +173,8 @@ describe("timer clock", () => {
       phaseVoiceEnabled: false,
       voicePack: "system",
       discordRpcEnabled: true,
+      appLockEnabled: false,
+      allowedApps: [],
     };
 
     expect(intervalDurationsMs(settings)).toEqual({

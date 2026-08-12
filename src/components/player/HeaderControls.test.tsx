@@ -14,11 +14,11 @@ describe("HeaderControls", () => {
       />
     );
 
-    const volumeBtn = screen.queryByRole("button", { name: /volume 70%/i });
-    expect(volumeBtn).not.toBeInTheDocument();
+    const slider = screen.queryByRole("slider", { name: /volume slider/i });
+    expect(slider).not.toBeInTheDocument();
   });
 
-  it("renders menu button and volume control when window is pinned", () => {
+  it("renders menu button and inline volume slider when window is pinned", () => {
     const onOpenMobileMenu = vi.fn();
     const onVolume = vi.fn();
 
@@ -39,13 +39,10 @@ describe("HeaderControls", () => {
     fireEvent.click(menuBtn);
     expect(onOpenMobileMenu).toHaveBeenCalledTimes(1);
 
-    const volumeBtn = screen.getByRole("button", { name: /volume 80%/i });
-    expect(volumeBtn).toBeInTheDocument();
-    fireEvent.click(volumeBtn);
-
     const slider = screen.getByRole("slider", { name: /volume slider/i });
     expect(slider).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: "0.2" } });
     expect(onVolume).toHaveBeenCalledWith(0.2);
   });
 });
+

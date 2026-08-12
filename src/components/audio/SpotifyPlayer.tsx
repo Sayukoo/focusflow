@@ -55,7 +55,7 @@ let spotifyApi: SpotifyIframeApi | null = null;
 export function SpotifyPlayer({
   track,
   playing,
-  volume: _volume,
+  volume,
   seekRequest,
   onTime,
   onDuration,
@@ -66,7 +66,7 @@ export function SpotifyPlayer({
   const hostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SpotifyEmbedController | null>(null);
   const lastSeekTokenRef = useRef<number | null>(null);
-  const playbackRef = useRef(playing);
+  const playbackRef = useRef({ playing, volume });
   const callbacksRef = useRef({
     onDuration,
     onEnded,
@@ -75,7 +75,7 @@ export function SpotifyPlayer({
     onTime,
   });
 
-  playbackRef.current = playing;
+  playbackRef.current = { playing, volume };
   callbacksRef.current = {
     onDuration,
     onEnded,
@@ -129,7 +129,7 @@ export function SpotifyPlayer({
               }
             });
 
-            if (playbackRef.current) {
+            if (playbackRef.current.playing) {
               void Promise.resolve(controller.play()).catch((error: unknown) => {
                 callbacksRef.current.onError(
                   error instanceof Error ? error.message : String(error),
@@ -164,6 +164,18 @@ export function SpotifyPlayer({
       );
     });
   }, [playing]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const iframe = host.querySelector<HTMLIFrameElement>("iframe");
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        { command: "set_volume", value: Math.round(volume * 100) },
+        "*",
+      );
+    }
+  }, [volume]);
 
   useEffect(() => {
     const controller = controllerRef.current;

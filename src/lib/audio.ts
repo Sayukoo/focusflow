@@ -4,11 +4,13 @@ import type {
   TimerSettings,
   Track,
 } from "../types";
+import { DEFAULT_LOFI_TRACKS } from "./defaultTracks";
 import { getIntervalPhase } from "./timer";
 
 const REMOTE_LIBRARY_KEY = "focusflow.remote-library";
 const LEGACY_YOUTUBE_LIBRARY_KEY = "focusflow.youtube-library";
 const FAVORITES_KEY = "focusflow.favorites";
+const LOFI_PACK_SEEDED_KEY = "focusflow.lofi-pack-seeded";
 
 export function formatClock(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
@@ -611,6 +613,16 @@ export function loadRemoteTracks(): Track[] {
           tracks.push(track);
         }
       }
+    }
+
+    if (localStorage.getItem(LOFI_PACK_SEEDED_KEY) !== "true") {
+      const existingIds = new Set(tracks.map((track) => track.id));
+      const additions = DEFAULT_LOFI_TRACKS.filter(
+        (track) => !existingIds.has(track.id),
+      ).map((track) => ({ ...track }));
+      tracks.push(...additions);
+      localStorage.setItem(LOFI_PACK_SEEDED_KEY, "true");
+      saveRemoteTracks(tracks);
     }
 
     return tracks;

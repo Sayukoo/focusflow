@@ -47,6 +47,7 @@ interface FocusPlayerProps {
   currentTrackId: string | null;
   isPlaying: boolean;
   volume: number;
+  duckingMultiplier?: number;
   progress: number;
   duration: number;
   playbackRate?: number;
@@ -110,6 +111,7 @@ export function FocusPlayer({
   favoritesOnly,
   isPlaying,
   volume,
+  duckingMultiplier = 1.0,
   progress,
   duration,
   playbackRate = 1.0,
@@ -316,10 +318,23 @@ export function FocusPlayer({
   );
 
   const [draftGoal, setDraftGoal] = useState(timerSettings.goal);
+  const goalInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setDraftGoal(timerSettings.goal);
   }, [timerSettings.goal]);
+
+  const handleQuickPomodoro = () => {
+    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+    updateFn?.({
+      ...timerSettings,
+      kind: "intervals",
+      durationMinutes: 25,
+      workDurationMinutes: 25,
+      breakDurationMinutes: 5,
+    });
+    window.setTimeout(() => goalInputRef.current?.focus(), 0);
+  };
 
   const handleGoalChange = (nextGoal: string) => {
     setDraftGoal(nextGoal);
@@ -524,6 +539,19 @@ export function FocusPlayer({
       />
 
       <main className="focus-center">
+        {!isBreakPhase ? (
+          <KaTeXTooltip formula="\text{25 min pracy / 5 min przerwy}">
+            <button
+              type="button"
+              className="quick-pomodoro-btn"
+              aria-label="Ustaw Pomodoro 25 minut pracy, 5 minut przerwy"
+              onClick={handleQuickPomodoro}
+            >
+              25 / 5
+            </button>
+          </KaTeXTooltip>
+        ) : null}
+
         <div
           className="timer-display"
           aria-label={`Timer ${timerLabel}`}
@@ -534,6 +562,7 @@ export function FocusPlayer({
 
         {!isBreakPhase ? (
           <textarea
+            ref={goalInputRef}
             rows={3}
             className="timer-goal-input"
             value={draftGoal}
@@ -628,7 +657,7 @@ export function FocusPlayer({
         <RemotePlayer
           track={currentTrack}
           playing={isPlaying}
-          volume={volume}
+          volume={volume * duckingMultiplier}
           playbackRate={playbackRate}
           seekRequest={remoteSeekRequest}
           onPlaying={onRemotePlaying}

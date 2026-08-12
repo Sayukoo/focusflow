@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { startAppLock, stopAppLock } from "../lib/appLock";
 import { announcePhaseTransition } from "../lib/phaseCues";
 import {
   createTimerClock,
@@ -38,8 +39,14 @@ export function useTimerEngine({
   const [elapsed, setElapsed] = useState(0);
 
   const setSessionActive = useCallback((active: boolean) => {
+    const wasActive = sessionStartedRef.current;
     sessionStartedRef.current = active;
     setSessionStarted(active);
+    if (active && !wasActive && timerSettingsRef.current.appLockEnabled) {
+      void startAppLock(timerSettingsRef.current.allowedApps);
+    } else if (!active && wasActive) {
+      void stopAppLock();
+    }
   }, []);
 
   const resetPhaseCueBaseline = useCallback(

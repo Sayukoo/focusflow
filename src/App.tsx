@@ -62,6 +62,7 @@ function App() {
       currentTrackId={player.currentTrackId}
       isPlaying={player.isPlaying}
       volume={player.volume}
+      duckingMultiplier={player.duckingMultiplier}
       progress={player.progress}
       duration={player.duration}
       timerLabel={player.timerLabel}

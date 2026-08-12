@@ -127,11 +127,15 @@ export function MiniGoalChecklist({
     });
   };
 
+  const handleDeleteMiniGoal = (index: number) => {
+    onChange(items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const commitText = (index: number, item: MiniGoal) => {
     const draft = drafts[item.id] ?? item.text;
     const text = normalizeMiniGoalText(draft);
     if (!text) {
-      setDrafts((current) => ({ ...current, [item.id]: item.text }));
+      handleDeleteMiniGoal(index);
       return;
     }
 
@@ -198,7 +202,7 @@ export function MiniGoalChecklist({
     if (!parent || !parent.subGoals) return;
 
     if (!text) {
-      setSubDrafts((current) => ({ ...current, [subItem.id]: subItem.text }));
+      handleDeleteSubGoal(parentIndex, subIndex);
       return;
     }
 

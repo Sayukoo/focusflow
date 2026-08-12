@@ -72,6 +72,10 @@ export interface TimerSettings {
   voicePack: VoicePackId;
   /** Broadcast focus activity and countdown to Discord Rich Presence. */
   discordRpcEnabled: boolean;
+  /** Minimize any app outside allowedApps while a session is active. */
+  appLockEnabled: boolean;
+  /** Lowercased process names (e.g. "chrome.exe") allowed during app lock. */
+  allowedApps: string[];
 }
 
 export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
@@ -88,6 +92,8 @@ export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
   phaseVoiceEnabled: true,
   voicePack: "calm-female",
   discordRpcEnabled: true,
+  appLockEnabled: false,
+  allowedApps: [],
 };
 
 export const PLAYBACK_RATES = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2.0] as const;

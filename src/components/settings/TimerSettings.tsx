@@ -31,6 +31,7 @@ import { TimerTypeTabs } from "./timer/TimerTypeTabs";
 import { TimerCueToggles } from "./timer/TimerCueToggles";
 import { TimerDurationControls } from "./timer/TimerDurationControls";
 import { TimerGoalSection } from "./timer/TimerGoalSection";
+import { AppLockSection } from "./timer/AppLockSection";
 
 interface TimerSettingsProps {
   open: boolean;
@@ -503,6 +504,8 @@ export const TimerSettings = memo(function TimerSettings({
                 settings={settings}
                 onChange={setDraftSettings}
               />
+
+              <AppLockSection settings={settings} onChange={setDraftSettings} />
 
               <motion.div
                 className="timer-copy"

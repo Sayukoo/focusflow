@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ReactElement } from "react";
+import { type ReactElement } from "react";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 
@@ -24,39 +24,15 @@ export function HeaderControls({
   onOpenMobileMenu,
   mobileMenuOpen = false,
 }: HeaderControlsProps): ReactElement {
-  const [showVolumePopover, setShowVolumePopover] = useState(false);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showVolumePopover) return;
-    function handleClickOutside(event: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        setShowVolumePopover(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showVolumePopover]);
-
   const volumePct = Math.round(volume * 100);
 
   return (
     <div className="focus-top-right">
       {windowPinned && (
-        <div className="header-volume-wrapper volume-pin-control" ref={popoverRef}>
+        <div className="header-volume-wrapper volume-pin-control">
           <KaTeXTooltip formula={`\\text{Głośność: ${volumePct}\\%}`}>
-            <button
-              type="button"
-              className="icon-btn ghost header-volume-btn"
-              aria-label={`Volume ${volumePct}%`}
-              onClick={() => setShowVolumePopover((prev) => !prev)}
-            >
+            <div className="volume header-volume-inline" aria-label="Volume strip">
               <Icon name="volume" size={18} />
-            </button>
-          </KaTeXTooltip>
-
-          {showVolumePopover && (
-            <div className="header-volume-popover">
               <input
                 type="range"
                 min={0}
@@ -68,9 +44,8 @@ export function HeaderControls({
                 onChange={(e) => onVolume?.(Number(e.target.value))}
                 onInput={(e) => onVolume?.(Number(e.currentTarget.value))}
               />
-              <span className="header-volume-text">{volumePct}%</span>
             </div>
-          )}
+          </KaTeXTooltip>
         </div>
       )}
 
@@ -139,3 +114,4 @@ export function HeaderControls({
     </div>
   );
 }
+

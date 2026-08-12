@@ -206,24 +206,13 @@ useAudioLibrary()  (hooks/useAudioLibrary.ts)
 
 ## 7. CSS architecture
 
-All styles live in **`src/styles.css`** — one file, no modules, no preprocessor.
-
-Major sections (search by comment heading):
-- `:root` — design tokens (colors, fonts)
-- `.boot` — loading screen
-- `.focus-shell` — root layout (3-row grid: header / main / footer)
-- `.thumbnail-bg` — animated blurred backdrop layers (**new**)
-- `.focus-atmosphere` — static CSS gradient overlay above thumbnail
-- `.focus-vignette` — dark radial vignette for readability
-- `.focus-top` / `.focus-center` / `.focus-bottom` — layout sections
-- `.icon-btn` — shared icon button styles
-- `.mini-goals-list` / `.mini-goal-input` / `.mini-goal-check` — task list styles
-- `.timer-display` — large center timer
-- `.now-playing` / `.cover` / `.now-meta` — footer track info
-- `.transport-strip` / `.seek-bar` / `.volume-bar` — playback controls
-- `.timer-settings-*` — settings panel overlay
-- `.profile-popover` / `.profile-about-me-*` — profile picker panel
-- `.is-window-pinned` — compact pinned window mode overrides (at bottom of file)
+Master entry point: **`src/styles.css`**, modularized into domain files under **`src/styles/`** (vanilla CSS only, no Tailwind, no preprocessor):
+- `src/styles/base.css` — Reset, design tokens, atmosphere, animated thumbnail background, icon primitives, KaTeX tooltips
+- `src/styles/player.css` — Root grid layout (`.focus-shell`), center timer display, main mini-goals checklist, playback transport controls, volume, track meta, remote players
+- `src/styles/library.css` — Music library drawer, track cards, search bar, genre filter tabs, link modal
+- `src/styles/settings.css` — Timer settings modal, profile picker & AI context editor, shortcuts modal, daily goals card
+- `src/styles/menu.css` — Mobile menu drawer & navigation items
+- `src/styles/pinned.css` — Compact pinned window mode overrides (`.focus-shell.is-window-pinned`) & compact pin-mode navigation menu
 
 **z-index layers (low → high):**
 1. `thumbnail-bg` (z-index: 0)
