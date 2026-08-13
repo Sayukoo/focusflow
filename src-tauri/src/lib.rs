@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 
 const DISCORD_CLIENT_ID: &str = "1348000000000000000";
@@ -361,6 +363,90 @@ pub fn run() {
         ])
         .setup(|app| {
             let _ = ensure_music_dir(app.handle().clone());
+
+            let quick_pomodoro_item = MenuItem::with_id(
+                app,
+                "quick_pomodoro",
+                "Pomodoro 25/5 + focus music",
+                true,
+                None::<&str>,
+            )?;
+            let show_item =
+                MenuItem::with_id(app, "show", "Show FocusFlow", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let tray_menu = Menu::with_items(
+                app,
+                &[&quick_pomodoro_item, &separator, &show_item, &separator, &quit_item],
+            )?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .tooltip("FocusFlow")
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quick_pomodoro" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("tray-quick-pomodoro", ());
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let visible = window.is_visible().unwrap_or(false);
+                            if visible {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            tray_builder.build(app)?;
+
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_skip_taskbar(true);
+                let window_for_events = window.clone();
+                window.on_window_event(move |event| match event {
+                    WindowEvent::Resized(_) => {
+                        if window_for_events.is_minimized().unwrap_or(false) {
+                            let _ = window_for_events.hide();
+                        }
+                    }
+                    WindowEvent::CloseRequested { api, .. } => {
+                        let _ = window_for_events.hide();
+                        api.prevent_close();
+                    }
+                    _ => {}
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

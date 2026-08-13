@@ -2131,6 +2131,34 @@ button {
   transform: translateX(0);
 }
 
+.app-lock-popover-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-lock-btn {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.app-lock-popover {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 40;
+  width: 19rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(22, 37, 43, 0.98), rgba(11, 19, 26, 0.98)),
+    rgba(17, 28, 34, 0.97);
+  box-shadow:
+    0 1rem 2.6rem rgba(0, 0, 0, 0.45),
+    inset 0 1px rgba(255, 255, 255, 0.1);
+}
+
 .app-lock-section {
   display: grid;
   gap: 0.5rem;

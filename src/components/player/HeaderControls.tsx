@@ -1,6 +1,8 @@
 import { type ReactElement } from "react";
+import type { TimerSettings } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
+import { AppLockButton } from "./AppLockButton";
 
 interface HeaderControlsProps {
   windowPinned: boolean;
@@ -12,6 +14,8 @@ interface HeaderControlsProps {
   onToggleProfilePicker: (open: boolean) => void;
   onOpenMobileMenu?: () => void;
   mobileMenuOpen?: boolean;
+  timerSettings?: TimerSettings;
+  onTimerSettingsChange?: (next: TimerSettings) => void;
 }
 
 export function HeaderControls({
@@ -23,6 +27,8 @@ export function HeaderControls({
   onToggleProfilePicker,
   onOpenMobileMenu,
   mobileMenuOpen = false,
+  timerSettings,
+  onTimerSettingsChange,
 }: HeaderControlsProps): ReactElement {
   const volumePct = Math.round(volume * 100);
 
@@ -84,6 +90,13 @@ export function HeaderControls({
           <Icon name="music-library" size={18} />
         </button>
       </KaTeXTooltip>
+
+      {timerSettings && onTimerSettingsChange ? (
+        <AppLockButton
+          settings={timerSettings}
+          onChange={onTimerSettingsChange}
+        />
+      ) : null}
 
       <KaTeXTooltip formula="\text{Account \& Profiles}">
         <button

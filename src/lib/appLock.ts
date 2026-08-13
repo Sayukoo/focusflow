@@ -5,6 +5,11 @@ export interface RunningApp {
   windowTitle: string;
 }
 
+// Minimizing other windows felt like a random flicker rather than a
+// deliberate block, so enforcement is disabled for now while the UX is
+// rethought. Flip this back to true to re-enable minimizing.
+const ENFORCEMENT_ENABLED = false;
+
 export async function listRunningApps(): Promise<RunningApp[]> {
   if (!isTauriRuntime()) return [];
   try {
@@ -16,7 +21,7 @@ export async function listRunningApps(): Promise<RunningApp[]> {
 }
 
 export async function startAppLock(allowed: string[]): Promise<void> {
-  if (!isTauriRuntime()) return;
+  if (!ENFORCEMENT_ENABLED || !isTauriRuntime()) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("start_app_lock", { allowed });

@@ -101,7 +101,9 @@ function App() {
         })
       }
       onOpenFolder={() => void player.openMusicFolder()}
-      onSelectTrack={(trackId) => void player.selectTrack(trackId)}
+      onSelectTrack={(trackId, autoplay) =>
+        void player.selectTrack(trackId, autoplay)
+      }
       onRemoveTrack={(track) => void player.removeTrack(track)}
       onSetFavoritesOnly={player.setFavoritesOnly}
       onTogglePlay={() => void player.togglePlay()}

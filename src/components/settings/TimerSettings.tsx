@@ -28,14 +28,16 @@ import type { MiniGoal } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { TimerTypeTabs } from "./timer/TimerTypeTabs";
-import { TimerCueToggles } from "./timer/TimerCueToggles";
 import { TimerDurationControls } from "./timer/TimerDurationControls";
 import { TimerGoalSection } from "./timer/TimerGoalSection";
-import { AppLockSection } from "./timer/AppLockSection";
 
 interface TimerSettingsProps {
   open: boolean;
   settings: TimerSettingsState;
+  /** Hide the type tabs and duration grid — used when a preset (e.g. the
+   * 25/5 quick-start button) already decided those and only the goal is
+   * left to fill in. */
+  compact?: boolean;
   onClose: () => void;
   onChange: (settings: TimerSettingsState) => void;
 }
@@ -53,6 +55,7 @@ const FOCUSABLE_SELECTOR = [
 export const TimerSettings = memo(function TimerSettings({
   open,
   settings: activeSettings,
+  compact = false,
   onClose,
   onChange,
 }: TimerSettingsProps) {
@@ -494,50 +497,47 @@ export const TimerSettings = memo(function TimerSettings({
               className="timer-settings-body"
               layout={!shouldReduceMotion}
             >
-              <TimerTypeTabs
-                kind={settings.kind}
-                shouldReduceMotion={shouldReduceMotion}
-                onChooseKind={chooseKind}
-              />
+              {!compact ? (
+                <>
+                  <TimerTypeTabs
+                    kind={settings.kind}
+                    shouldReduceMotion={shouldReduceMotion}
+                    onChooseKind={chooseKind}
+                  />
 
-              <TimerCueToggles
-                settings={settings}
-                onChange={setDraftSettings}
-              />
+                  <motion.div
+                    className="timer-copy"
+                    layout={!shouldReduceMotion ? "position" : false}
+                  >
+                    <h2>
+                      {settings.kind === "infinite"
+                        ? "Infinite"
+                        : settings.kind === "intervals"
+                          ? "Intervals"
+                          : "Timer"}
+                    </h2>
+                    <p id="timer-settings-description">
+                      {settings.kind === "infinite"
+                        ? "No end time"
+                        : settings.kind === "intervals"
+                          ? "Work and break cycle"
+                          : "Session duration"}
+                    </p>
+                  </motion.div>
 
-              <AppLockSection settings={settings} onChange={setDraftSettings} />
-
-              <motion.div
-                className="timer-copy"
-                layout={!shouldReduceMotion ? "position" : false}
-              >
-                <h2>
-                  {settings.kind === "infinite"
-                    ? "Infinite"
-                    : settings.kind === "intervals"
-                      ? "Intervals"
-                      : "Timer"}
-                </h2>
-                <p id="timer-settings-description">
-                  {settings.kind === "infinite"
-                    ? "No end time"
-                    : settings.kind === "intervals"
-                      ? "Work and break cycle"
-                      : "Session duration"}
-                </p>
-              </motion.div>
-
-              <TimerDurationControls
-                settings={settings}
-                customAmount={customAmount}
-                customUnit={customUnit}
-                shouldReduceMotion={shouldReduceMotion}
-                onCustomAmountChange={setCustomAmount}
-                onCustomUnitChange={setCustomUnit}
-                onChoosePreset={choosePreset}
-                onChooseIntervalPreset={chooseIntervalPreset}
-                onApplyCustom={applyCustom}
-              />
+                  <TimerDurationControls
+                    settings={settings}
+                    customAmount={customAmount}
+                    customUnit={customUnit}
+                    shouldReduceMotion={shouldReduceMotion}
+                    onCustomAmountChange={setCustomAmount}
+                    onCustomUnitChange={setCustomUnit}
+                    onChoosePreset={choosePreset}
+                    onChooseIntervalPreset={chooseIntervalPreset}
+                    onApplyCustom={applyCustom}
+                  />
+                </>
+              ) : null}
 
               <TimerGoalSection
                 settings={settings}
@@ -596,6 +596,7 @@ export const TimerSettings = memo(function TimerSettings({
   if (!previous.open) return true;
   return (
     previous.settings === next.settings &&
+    previous.compact === next.compact &&
     previous.onClose === next.onClose &&
     previous.onChange === next.onChange
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import type { FocusAnalyticsStore } from "../../lib/analytics";
-import { isRemoteTrack } from "../../lib/audio";
+import { isRemoteTrack, isTauriRuntime } from "../../lib/audio";
 import {
   categorizeTrackWithStatus,
   getTrackCategory,
@@ -74,7 +74,7 @@ interface FocusPlayerProps {
   onAddLink: (url: string) => void;
   onDropFiles: (files: File[]) => void;
   onRefresh: () => void;
-  onSelectTrack: (trackId: string) => void;
+  onSelectTrack: (trackId: string, autoplay?: boolean) => void;
   onRemoveTrack: (track: Track) => void;
   onTogglePlay: () => void | Promise<void>;
   onNext: () => void | Promise<void>;
@@ -170,7 +170,7 @@ export function FocusPlayer({
     onNext: () => void onNext(),
     onPrevious: () => void onPrevious(),
     onToggleLibrary: () => onToggleLibrary(!libraryOpen),
-    onToggleTimer: () => (timerSettingsOpen ? onCloseTimerSettings() : onOpenTimerSettings()),
+    onToggleTimer: () => (timerSettingsOpen ? onCloseTimerSettings() : openFullTimerSettings()),
     onToggleProfile: () => onToggleProfilePicker(!profilePickerOpen),
     onToggleShortcuts: () => setHotkeysModalOpen((prev) => !prev),
     onSpeedUp: () => {
@@ -319,6 +319,7 @@ export function FocusPlayer({
 
   const [draftGoal, setDraftGoal] = useState(timerSettings.goal);
   const goalInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [timerSettingsCompact, setTimerSettingsCompact] = useState(false);
 
   useEffect(() => {
     setDraftGoal(timerSettings.goal);
@@ -333,8 +334,71 @@ export function FocusPlayer({
       workDurationMinutes: 25,
       breakDurationMinutes: 5,
     });
-    window.setTimeout(() => goalInputRef.current?.focus(), 0);
+    setTimerSettingsCompact(true);
+    onOpenTimerSettings();
   };
+
+  const openFullTimerSettings = () => {
+    setTimerSettingsCompact(false);
+    onOpenTimerSettings();
+  };
+
+  const handleTrayQuickPomodoro = useCallback(() => {
+    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+    updateFn?.({
+      ...timerSettings,
+      kind: "intervals",
+      durationMinutes: 25,
+      workDurationMinutes: 25,
+      breakDurationMinutes: 5,
+    });
+
+    const focusTrack =
+      tracks.find(
+        (track) => track.source === "youtube" && track.category === "LOFI",
+      ) ?? tracks[0];
+    if (focusTrack) {
+      onSelectTrack(focusTrack.id, true);
+    }
+
+    void onSetWindowPinned(true);
+    window.setTimeout(() => goalInputRef.current?.focus(), 150);
+  }, [
+    onChangeTimerSettings,
+    onSelectTrack,
+    onSetWindowPinned,
+    onTimerSettingsChange,
+    timerSettings,
+    tracks,
+  ]);
+
+  const handleTrayQuickPomodoroRef = useRef(handleTrayQuickPomodoro);
+  useEffect(() => {
+    handleTrayQuickPomodoroRef.current = handleTrayQuickPomodoro;
+  }, [handleTrayQuickPomodoro]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      const stop = await listen("tray-quick-pomodoro", () => {
+        handleTrayQuickPomodoroRef.current();
+      });
+      if (cancelled) {
+        stop();
+      } else {
+        unlisten = stop;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const handleGoalChange = (nextGoal: string) => {
     setDraftGoal(nextGoal);
@@ -419,7 +483,7 @@ export function FocusPlayer({
 
   const openMobileTimer = () => {
     setMobileMenuOpen(false);
-    onOpenTimerSettings();
+    openFullTimerSettings();
   };
 
   const openMobileLibrary = () => {
@@ -500,6 +564,8 @@ export function FocusPlayer({
           }}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           mobileMenuOpen={mobileMenuOpen}
+          timerSettings={timerSettings}
+          onTimerSettingsChange={onTimerSettingsChange ?? onChangeTimerSettings}
         />
       </header>
 
@@ -693,6 +759,7 @@ export function FocusPlayer({
       <TimerSettingsModal
         open={timerSettingsOpen}
         settings={timerSettings}
+        compact={timerSettingsCompact}
         onClose={onCloseTimerSettings}
         onChange={(settings) =>
           (onTimerSettingsChange ?? onChangeTimerSettings)?.(settings)
