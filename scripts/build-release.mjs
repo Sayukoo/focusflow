@@ -831,11 +831,20 @@ function buildPortableWindowsExe(iconVerification) {
   }
   verifyWindowsIconResources(executable, iconVerification);
 
-  return copyArtifact(
+  const portableExe = copyArtifact(
     executable,
     join(releaseRoot, "FocusFlow-portable.exe"),
     "Portable Windows executable",
   );
+
+  const webview2Loader = join(dirname(executable), "WebView2Loader.dll");
+  copyArtifact(
+    webview2Loader,
+    join(releaseRoot, "WebView2Loader.dll"),
+    "WebView2Loader.dll",
+  );
+
+  return portableExe;
 }
 
 function buildAndroidApk() {
@@ -949,6 +958,11 @@ function writeManifest({ executable, failure, iconVerification }) {
   ];
 
   addArtifactToManifest(lines, "Windows portable", executable);
+  addArtifactToManifest(
+    lines,
+    "WebView2Loader.dll",
+    executable ? join(releaseRoot, "WebView2Loader.dll") : null,
+  );
   lines.push("Android APK (ARM64): disabled");
 
   if (lockedReleaseArtifacts.length) {
@@ -964,6 +978,7 @@ function writeManifest({ executable, failure, iconVerification }) {
   lines.push(
     "",
     "The Windows portable build expects WebView2 Runtime on the machine.",
+    "WebView2Loader.dll must stay in the same folder as FocusFlow-portable.exe.",
   );
   if (failure) {
     lines.push(
