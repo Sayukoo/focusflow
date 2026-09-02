@@ -5,13 +5,26 @@ use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 
 const DISCORD_CLIENT_ID: &str = "1348000000000000000";
+
+pub struct WindowPinState {
+    pub is_pinned: Arc<AtomicBool>,
+}
+
+impl WindowPinState {
+    pub fn new() -> Self {
+        Self {
+            is_pinned: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 pub struct DiscordRpcState {
     client: Mutex<Option<DiscordIpcClient>>,
@@ -330,11 +343,60 @@ fn stop_app_lock(state: tauri::State<'_, AppLockState>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn enforce_topmost(window: &tauri::WebviewWindow, topmost: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_SHOWWINDOW,
+    };
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let insert_after = if topmost {
+                HWND_TOPMOST
+            } else {
+                HWND_NOTOPMOST
+            };
+            let _ = SetWindowPos(
+                HWND(hwnd.0 as *mut _),
+                Some(insert_after),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn enforce_topmost(_window: &tauri::WebviewWindow, _topmost: bool) {}
+
+#[tauri::command]
+fn set_window_pinned(
+    app: AppHandle,
+    state: tauri::State<'_, WindowPinState>,
+    pinned: bool,
+) -> Result<(), String> {
+    state.is_pinned.store(pinned, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_always_on_top(pinned);
+        enforce_topmost(&window, pinned);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let pin_state = WindowPinState::new();
+    let is_pinned_flag = pin_state.is_pinned.clone();
+
     let builder = tauri::Builder::default()
         .manage(DiscordRpcState::new())
         .manage(AppLockState::new())
+        .manage(pin_state)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -359,9 +421,10 @@ pub fn run() {
             clear_discord_presence,
             list_running_apps,
             start_app_lock,
-            stop_app_lock
+            stop_app_lock,
+            set_window_pinned
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let _ = ensure_music_dir(app.handle().clone());
 
             let quick_pomodoro_item = MenuItem::with_id(
@@ -433,10 +496,26 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_skip_taskbar(true);
                 let window_for_events = window.clone();
+                let is_pinned_for_events = is_pinned_flag.clone();
                 window.on_window_event(move |event| match event {
                     WindowEvent::Resized(_) => {
                         if window_for_events.is_minimized().unwrap_or(false) {
                             let _ = window_for_events.hide();
+                        } else if is_pinned_for_events.load(Ordering::SeqCst) {
+                            let _ = window_for_events.set_always_on_top(true);
+                            enforce_topmost(&window_for_events, true);
+                        }
+                    }
+                    WindowEvent::Moved(_) => {
+                        if is_pinned_for_events.load(Ordering::SeqCst) {
+                            let _ = window_for_events.set_always_on_top(true);
+                            enforce_topmost(&window_for_events, true);
+                        }
+                    }
+                    WindowEvent::Focused(false) => {
+                        if is_pinned_for_events.load(Ordering::SeqCst) {
+                            let _ = window_for_events.set_always_on_top(true);
+                            enforce_topmost(&window_for_events, true);
                         }
                     }
                     WindowEvent::CloseRequested { api, .. } => {

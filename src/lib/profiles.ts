@@ -73,15 +73,30 @@ export function saveProfileStore(store: ProfileStore): void {
 export function reconcileProfileTracks(
   store: ProfileStore,
   trackIds: string[],
+  defaultProfileByTrackId: Record<string, string> = {},
 ): ProfileStore {
   const next = cloneProfileStore(store);
   const knownIds = unique(trackIds);
 
+  const resolveDefaultProfileId = (trackId: string): string | null => {
+    const candidate = defaultProfileByTrackId[trackId];
+    return candidate && next.profiles.some((profile) => profile.id === candidate)
+      ? candidate
+      : null;
+  };
+
   if (!next.migrationComplete) {
-    next.trackIdsByProfile["deep-work"] = unique([
-      ...(next.trackIdsByProfile["deep-work"] ?? []),
-      ...knownIds,
-    ]);
+    const alreadyAssigned = new Set(
+      Object.values(next.trackIdsByProfile).flatMap((ids) => ids),
+    );
+    for (const trackId of knownIds) {
+      if (alreadyAssigned.has(trackId)) continue;
+      const targetProfileId = resolveDefaultProfileId(trackId) ?? "deep-work";
+      next.trackIdsByProfile[targetProfileId] = unique([
+        ...(next.trackIdsByProfile[targetProfileId] ?? []),
+        trackId,
+      ]);
+    }
     next.favoriteIdsByProfile["deep-work"] = unique([
       ...(next.favoriteIdsByProfile["deep-work"] ?? []),
       ...loadLegacyFavoriteIds(),
@@ -94,11 +109,11 @@ export function reconcileProfileTracks(
     Object.values(next.trackIdsByProfile).flatMap((ids) => ids),
   );
   const unassigned = knownIds.filter((id) => !assigned.has(id));
-  if (unassigned.length > 0) {
-    const activeIds = next.trackIdsByProfile[next.activeProfileId] ?? [];
-    next.trackIdsByProfile[next.activeProfileId] = unique([
-      ...activeIds,
-      ...unassigned,
+  for (const trackId of unassigned) {
+    const targetProfileId = resolveDefaultProfileId(trackId) ?? next.activeProfileId;
+    next.trackIdsByProfile[targetProfileId] = unique([
+      ...(next.trackIdsByProfile[targetProfileId] ?? []),
+      trackId,
     ]);
   }
 

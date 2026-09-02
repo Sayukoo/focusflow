@@ -78,13 +78,35 @@ export function useAudioLibrary() {
     getVolume: () => engine.volumeRef.current,
   });
 
+  const [volumeNormalization, setVolumeNormalizationState] = useState(true);
+  const setVolumeNormalization = useCallback((enabled: boolean) => {
+    setVolumeNormalizationState(Boolean(enabled));
+  }, []);
+  const toggleVolumeNormalization = useCallback(() => {
+    setVolumeNormalizationState((value) => !value);
+  }, []);
+
   const runningInTauri = useMemo(() => isTauriRuntime(), []);
 
   const engine = useAudioPlaybackEngine({
     runningInTauri,
     startSession,
     duckingMultiplier,
+    normalizationEnabled: volumeNormalization,
   });
+
+  // Stable per-field bindings (the engine object itself is a fresh literal
+  // every render, but each of these members is a stable ref/callback).
+  const {
+    audioRef,
+    currentIdRef,
+    playingRef,
+    lastRenderedProgressRef,
+    setPlayingState,
+    setProgress,
+    setRemoteSeekRequest,
+  } = engine;
+  const { loadTrack } = engine;
 
   useEffect(() => {
     return () => {
@@ -99,6 +121,7 @@ export function useAudioLibrary() {
     loadTrack: engine.loadTrack,
     currentIdRef: engine.currentIdRef,
   });
+  const { setError } = library;
 
   const playbackQueueRef = useRef<PlaybackQueue>({ kind: "all" });
   const [playbackQueue, setPlaybackQueueState] = useState<PlaybackQueue>({
@@ -106,8 +129,11 @@ export function useAudioLibrary() {
   });
 
   const [timerSettingsOpen, setTimerSettingsOpen] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
+  const [hubOpen, setHubOpen] = useState(false);
+
+  const openHub = useCallback(() => {
+    setHubOpen(true);
+  }, []);
 
   const favoritesOnly = playbackQueue.kind === "favorites";
 
@@ -135,8 +161,10 @@ export function useAudioLibrary() {
   const filterTracksForQueue = useCallback(
     (queue: PlaybackQueue) => {
       if (queue.kind === "favorites") {
+        // PERF: Set lookup instead of includes per track.
+        const favoriteIds = new Set(favoriteTrackIdsRef.current);
         return library.tracksRef.current.filter((track) =>
-          favoriteTrackIdsRef.current.includes(track.id),
+          favoriteIds.has(track.id),
         );
       }
       if (queue.kind === "recent") {
@@ -167,55 +195,24 @@ export function useAudioLibrary() {
     engine.setMode(activeProfile?.theme ?? "deep");
   }, [profileStore, engine]);
 
+  // Element creation, playback listeners and near-end auto-crossfade live in
+  // useAudioPlaybackEngine now. Here we only restore persisted settings and
+  // kick off the initial library load.
   useEffect(() => {
-    const audio = new Audio();
-    audio.preload = "metadata";
-    engine.audioRef.current = audio;
-
-    const onTime = () => {
-      const nextProgress = audio.currentTime || 0;
-      if (
-        audio.paused ||
-        nextProgress === 0 ||
-        nextProgress - engine.lastRenderedProgressRef.current >= 0.35
-      ) {
-        engine.lastRenderedProgressRef.current = nextProgress;
-        engine.setProgress(nextProgress);
-      }
-    };
-    const onMeta = () =>
-      engine.setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
-    const onPlay = () => engine.setPlayingState(true);
-    const onPause = () => engine.setPlayingState(false);
-    const onEnded = () => {
-      const list = getPlaybackTracks();
-      const index = findTrackIndex(list, engine.currentIdRef.current);
-      const next = nextTrackIndex(index, list.length);
-      if (next >= 0) {
-        void engine.loadTrack(list[next], true);
-      } else {
-        engine.setPlayingState(false);
-        engine.setProgress(0);
-      }
-    };
-
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnded);
-
     const snapshot = loadPlayerSnapshot();
     if (typeof snapshot.volume === "number") {
       const nextVolume = Math.min(1, Math.max(0, snapshot.volume));
       engine.setVolumeState(nextVolume);
-      audio.volume = nextVolume;
+      if (engine.audioRef.current) {
+        engine.audioRef.current.volume = nextVolume;
+      }
     }
     if (typeof snapshot.playbackRate === "number") {
       const restoredRate = Math.min(2.0, Math.max(0.5, snapshot.playbackRate));
-      engine.setPlaybackRateState(restoredRate);
-      engine.playbackRateRef.current = restoredRate;
-      audio.playbackRate = restoredRate;
+      engine.setPlaybackRate(restoredRate);
+    }
+    if (typeof snapshot.volumeNormalization === "boolean") {
+      setVolumeNormalization(snapshot.volumeNormalization);
     }
     if (snapshot.timerSettings !== undefined) {
       const restoredSettings = normalizeTimerSettings(snapshot.timerSettings);
@@ -278,17 +275,18 @@ export function useAudioLibrary() {
         engine.setReady(true);
       }
     })();
-
-    return () => {
-      audio.pause();
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", onEnded);
-      engine.audioRef.current = null;
-    };
   }, []);
+
+  // Keep the engine's auto-advance resolver fresh every render (cheap ref
+  // write) so near-end crossfade always follows the active playback queue.
+  useEffect(() => {
+    engine.resolveAutoNextRef.current = () => {
+      const list = filterTracksForQueue(playbackQueueRef.current);
+      const index = findTrackIndex(list, engine.currentIdRef.current);
+      const next = nextTrackIndex(index, list.length);
+      return next >= 0 ? list[next] : null;
+    };
+  });
 
   useEffect(() => {
     if (!engine.ready) return;
@@ -311,6 +309,7 @@ export function useAudioLibrary() {
             : 60,
       timerSettings,
       playbackRate: engine.playbackRate,
+      volumeNormalization,
     });
   }, [
     engine.ready,
@@ -319,6 +318,7 @@ export function useAudioLibrary() {
     engine.mode,
     timerSettings,
     engine.playbackRate,
+    volumeNormalization,
   ]);
 
   const syncTimerClock = useCallback(() => {
@@ -442,29 +442,33 @@ export function useAudioLibrary() {
     trackFocusTick,
   ]);
 
+  // PERF: depend on the specific stable engine refs/callbacks instead of the
+  // whole `engine` object (a fresh literal every render). Depending on `engine`
+  // made these callbacks change identity ~3×/second during playback, which
+  // defeated every memo() below and re-rendered the entire tree per tick.
   const selectTrack = useCallback(
     async (trackId: string, autoplay = false) => {
       const track = library.tracksRef.current.find(
         (item) => item.id === trackId,
       );
       if (!track) return;
-      await engine.loadTrack(track, autoplay);
+      await loadTrack(track, autoplay);
     },
-    [engine, library.tracksRef],
+    [library.tracksRef, loadTrack],
   );
 
   const togglePlay = useCallback(async () => {
-    const audio = engine.audioRef.current;
+    const audio = audioRef.current;
     if (!audio) return;
 
     const activeTrack = library.tracksRef.current.find(
-      (track) => track.id === engine.currentIdRef.current,
+      (track) => track.id === currentIdRef.current,
     );
 
-    if (!engine.currentIdRef.current) {
+    if (!currentIdRef.current) {
       const queue = getPlaybackTracks();
       if (queue.length === 0) {
-        setLibraryOpen(true);
+        openHub();
         library.setError(
           playbackQueueRef.current.kind === "favorites"
             ? "Add a favorite to start this queue."
@@ -472,13 +476,13 @@ export function useAudioLibrary() {
         );
         return;
       }
-      await engine.loadTrack(queue[0], true);
+      await loadTrack(queue[0], true);
       return;
     }
 
     if (isRemoteTrack(activeTrack)) {
-      if (engine.playingRef.current) {
-        engine.setPlayingState(false);
+      if (playingRef.current) {
+        setPlayingState(false);
         return;
       }
 
@@ -490,7 +494,7 @@ export function useAudioLibrary() {
         resetTimerClock(timerClockRef.current);
         setElapsed(0);
       }
-      engine.setPlayingState(true);
+      setPlayingState(true);
       startSession();
       return;
     }
@@ -514,11 +518,17 @@ export function useAudioLibrary() {
       audio.pause();
     }
   }, [
+    audioRef,
+    currentIdRef,
     elapsed,
-    engine,
     getPlaybackTracks,
-    library,
+    library.setError,
+    library.tracksRef,
+    loadTrack,
+    openHub,
+    playingRef,
     setElapsed,
+    setPlayingState,
     startSession,
     timerClockRef,
     timerSettings,
@@ -527,44 +537,55 @@ export function useAudioLibrary() {
   const playNext = useCallback(
     async (forceAutoplay = false) => {
       const list = getPlaybackTracks();
-      const index = findTrackIndex(list, engine.currentIdRef.current);
+      const index = findTrackIndex(list, currentIdRef.current);
       const next = nextTrackIndex(index, list.length);
       if (next >= 0) {
-        await engine.loadTrack(
+        await loadTrack(
           list[next],
-          forceAutoplay || engine.playingRef.current || index < 0,
+          forceAutoplay || playingRef.current || index < 0,
+          "manual",
         );
       }
     },
-    [engine, getPlaybackTracks],
+    [currentIdRef, getPlaybackTracks, loadTrack, playingRef],
   );
 
   const playPrevious = useCallback(async () => {
-    const audio = engine.audioRef.current;
+    const audio = audioRef.current;
     const activeTrack = library.tracksRef.current.find(
-      (track) => track.id === engine.currentIdRef.current,
+      (track) => track.id === currentIdRef.current,
     );
-    if (isRemoteTrack(activeTrack) && engine.progress > 3) {
-      engine.setRemoteSeekRequest({
+    if (isRemoteTrack(activeTrack) && lastRenderedProgressRef.current > 3) {
+      setRemoteSeekRequest({
         value: 0,
         token: Date.now() + Math.random(),
       });
-      engine.setProgress(0);
+      setProgress(0);
       return;
     }
     if (audio && audio.currentTime > 3) {
       audio.currentTime = 0;
-      engine.lastRenderedProgressRef.current = 0;
-      engine.setProgress(0);
+      lastRenderedProgressRef.current = 0;
+      setProgress(0);
       return;
     }
     const list = getPlaybackTracks();
-    const index = findTrackIndex(list, engine.currentIdRef.current);
+    const index = findTrackIndex(list, currentIdRef.current);
     const prev = previousTrackIndex(index, list.length);
     if (prev >= 0) {
-      await engine.loadTrack(list[prev], engine.playingRef.current);
+      await loadTrack(list[prev], playingRef.current, "manual");
     }
-  }, [engine, getPlaybackTracks, library.tracksRef]);
+  }, [
+    audioRef,
+    currentIdRef,
+    getPlaybackTracks,
+    lastRenderedProgressRef,
+    library.tracksRef,
+    loadTrack,
+    playingRef,
+    setProgress,
+    setRemoteSeekRequest,
+  ]);
 
   const playQueue = useCallback(
     (queue: PlaybackQueue, trackId: string | null = null) => {
@@ -573,10 +594,10 @@ export function useAudioLibrary() {
       setPlaybackQueueState(queue);
 
       if (list.length === 0) {
-        engine.audioRef.current?.pause();
-        engine.setPlayingState(false);
+        audioRef.current?.pause();
+        setPlayingState(false);
         setSessionActive(false);
-        library.setError(
+        setError(
           queue.kind === "favorites"
             ? "Favorite a track to build this queue."
             : "No tracks in this queue.",
@@ -587,9 +608,9 @@ export function useAudioLibrary() {
       const selectedTrack =
         (trackId ? list.find((track) => track.id === trackId) : null) ??
         list[0];
-      void engine.loadTrack(selectedTrack, true);
+      void loadTrack(selectedTrack, true, "manual");
     },
-    [engine, filterTracksForQueue, library, setSessionActive],
+    [audioRef, filterTracksForQueue, loadTrack, setError, setPlayingState, setSessionActive],
   );
 
   const setFavoritesQueue = useCallback(
@@ -605,21 +626,31 @@ export function useAudioLibrary() {
         favoriteTrackIdsRef.current.includes(track.id),
       );
       if (!firstFavorite) {
-        engine.audioRef.current?.pause();
-        engine.setPlayingState(false);
+        audioRef.current?.pause();
+        setPlayingState(false);
         setSessionActive(false);
-        library.setError("Favorite a track to build this queue.");
+        setError("Favorite a track to build this queue.");
         return;
       }
 
       const current = library.tracksRef.current.find(
-        (track) => track.id === engine.currentIdRef.current,
+        (track) => track.id === currentIdRef.current,
       );
       if (!current || !favoriteTrackIdsRef.current.includes(current.id)) {
-        void engine.loadTrack(firstFavorite, engine.playingRef.current);
+        void loadTrack(firstFavorite, playingRef.current, "manual");
       }
     },
-    [engine, favoriteTrackIdsRef, library, setSessionActive],
+    [
+      audioRef,
+      currentIdRef,
+      favoriteTrackIdsRef,
+      library.tracksRef,
+      loadTrack,
+      playingRef,
+      setError,
+      setPlayingState,
+      setSessionActive,
+    ],
   );
 
   const onRemoteEnded = useCallback(() => {
@@ -638,13 +669,6 @@ export function useAudioLibrary() {
     if (timerSettings.kind === "infinite") {
       const s = Math.floor(elapsed);
       const m = Math.floor(s / 60);
-      const h = Math.floor(m / 60);
-      if (h > 0) {
-        const rh = h;
-        const rm = m % 60;
-        const rs = s % 60;
-        return `${rh}:${rm.toString().padStart(2, "0")}:${rs.toString().padStart(2, "0")}`;
-      }
       return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
     }
 
@@ -660,13 +684,6 @@ export function useAudioLibrary() {
     const remainingMs = Math.max(0, totalMs - elapsedMs);
     const s = Math.floor(remainingMs / 1000);
     const m = Math.floor(s / 60);
-    const h = Math.floor(m / 60);
-    if (h > 0) {
-      const rh = h;
-      const rm = m % 60;
-      const rs = s % 60;
-      return `${rh}:${rm.toString().padStart(2, "0")}:${rs.toString().padStart(2, "0")}`;
-    }
     return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }, [elapsed, timerSettings]);
 
@@ -681,6 +698,14 @@ export function useAudioLibrary() {
         : [],
     }));
   }, [setElapsed, setTimerSettings, timerClockRef]);
+
+  const seek = useCallback(
+    (value: number) => {
+      engine.seek(value, library.tracks);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable members only
+    [engine.seek, library.tracks],
+  );
 
   const updateTimerSettings = useCallback(
     (next: TimerSettings) => {
@@ -713,7 +738,7 @@ export function useAudioLibrary() {
     activeProfileId: profileStore.activeProfileId,
     analyticsSummary,
     analyticsStore,
-    profilePickerOpen,
+    hubOpen,
     favoriteTrackIds,
     favoritesOnly,
     isPlaying: engine.isPlaying,
@@ -727,13 +752,12 @@ export function useAudioLibrary() {
     mode: engine.mode,
     timerSettings,
     timerSettingsOpen,
-    libraryOpen,
     busy: library.busy,
     error: engine.error ?? library.error,
     ready: engine.ready,
     browserMode: !runningInTauri,
-    setLibraryOpen,
-    setProfilePickerOpen,
+    setHubOpen,
+    openHub,
     switchProfile: selectProfile,
     createProfile,
     deleteProfile,
@@ -748,10 +772,12 @@ export function useAudioLibrary() {
     togglePlay,
     playNext,
     playPrevious,
-    seek: (value: number) => engine.seek(value, library.tracks),
+    seek,
     setVolume: engine.setVolume,
     playbackRate: engine.playbackRate,
     setPlaybackRate: engine.setPlaybackRate,
+    volumeNormalization,
+    toggleVolumeNormalization,
     toggleFavorite,
     playQueue,
     setFavoritesOnly: setFavoritesQueue,

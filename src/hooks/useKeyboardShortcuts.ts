@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface KeyboardShortcutsOptions {
   onTogglePlay?: () => void;
@@ -27,10 +27,50 @@ export function useKeyboardShortcuts({
   onEscape,
   disabled = false,
 }: KeyboardShortcutsOptions): void {
+  // PERF: handlers get fresh identities on every parent render (the timer
+  // re-renders once per second). Keeping them in a ref lets the keydown
+  // listener subscribe exactly once instead of churning every tick.
+  const handlersRef = useRef({
+    onTogglePlay,
+    onNext,
+    onPrevious,
+    onToggleLibrary,
+    onToggleTimer,
+    onToggleProfile,
+    onToggleShortcuts,
+    onSpeedUp,
+    onSpeedDown,
+    onEscape,
+  });
+  handlersRef.current = {
+    onTogglePlay,
+    onNext,
+    onPrevious,
+    onToggleLibrary,
+    onToggleTimer,
+    onToggleProfile,
+    onToggleShortcuts,
+    onSpeedUp,
+    onSpeedDown,
+    onEscape,
+  };
+
   useEffect(() => {
     if (disabled) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      const {
+        onTogglePlay,
+        onNext,
+        onPrevious,
+        onToggleLibrary,
+        onToggleTimer,
+        onToggleProfile,
+        onToggleShortcuts,
+        onSpeedUp,
+        onSpeedDown,
+        onEscape,
+      } = handlersRef.current;
       const target = event.target as HTMLElement | null;
       const isInput =
         target &&
@@ -106,17 +146,5 @@ export function useKeyboardShortcuts({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    disabled,
-    onEscape,
-    onNext,
-    onPrevious,
-    onSpeedDown,
-    onSpeedUp,
-    onToggleLibrary,
-    onTogglePlay,
-    onToggleProfile,
-    onToggleShortcuts,
-    onToggleTimer,
-  ]);
+  }, [disabled]);
 }

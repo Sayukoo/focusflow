@@ -44,7 +44,11 @@ export function KaTeXTooltip({
   const [bubbleStyle, setBubbleStyle] = useState<CSSProperties>();
   const [safePlacement, setSafePlacement] = useState(placement);
 
+  // PERF: render the KaTeX markup lazily — only once the tooltip actually
+  // opens. Previously every mounted tooltip (3 per track card!) rendered its
+  // formula on mount even if it was never hovered.
   const html = useMemo(() => {
+    if (!open) return "";
     try {
       return katex.renderToString(formula, {
         throwOnError: false,
@@ -54,7 +58,7 @@ export function KaTeXTooltip({
     } catch {
       return escapeHtml(formulaToText(formula));
     }
-  }, [formula]);
+  }, [formula, open]);
 
   useLayoutEffect(() => {
     if (!open || !wrapperRef.current || !bubbleRef.current) return;

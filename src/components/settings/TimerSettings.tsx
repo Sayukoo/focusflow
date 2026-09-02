@@ -30,6 +30,7 @@ import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { TimerTypeTabs } from "./timer/TimerTypeTabs";
 import { TimerDurationControls } from "./timer/TimerDurationControls";
 import { TimerGoalSection } from "./timer/TimerGoalSection";
+import { AppLockSection } from "./timer/AppLockSection";
 
 interface TimerSettingsProps {
   open: boolean;
@@ -565,6 +566,13 @@ export const TimerSettings = memo(function TimerSettings({
                 onRequestMiniGoals={requestMiniGoals}
                 onClarificationAnswerChange={setClarificationAnswer}
                 onMiniGoalsChange={handleDraftMiniGoalsChange}
+              />
+
+              <AppLockSection
+                settings={draftSettings}
+                onChange={(next) =>
+                  setDraftSettings(normalizeTimerSettings(next))
+                }
               />
 
               <div className="timer-settings-actions">

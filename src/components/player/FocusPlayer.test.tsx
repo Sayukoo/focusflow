@@ -4,12 +4,8 @@ import type { ComponentProps } from "react";
 import { DEFAULT_TIMER_SETTINGS, type Track } from "../../types";
 import { FocusPlayer } from "./FocusPlayer";
 
-vi.mock("../library/MusicLibrary", () => ({
-  MusicLibrary: () => null,
-}));
-
-vi.mock("../settings/ProfilePicker", () => ({
-  ProfilePicker: () => null,
+vi.mock("../hub/HubPanel", () => ({
+  HubPanel: () => null,
 }));
 
 vi.mock("../audio/RemotePlayer", () => ({
@@ -43,7 +39,6 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
       },
     ],
     activeProfileId: "deep-work",
-    profilePickerOpen: false,
     favoriteTrackIds: [],
     favoritesOnly: false,
     currentTrackId: track.id,
@@ -55,13 +50,13 @@ function createProps(): ComponentProps<typeof FocusPlayer> {
     mode: "deep",
     timerSettings: DEFAULT_TIMER_SETTINGS,
     timerSettingsOpen: false,
-    libraryOpen: false,
+    hubOpen: false,
     busy: false,
     error: null,
     browserMode: true,
     windowPinned: false,
-    onToggleLibrary: vi.fn(),
-    onToggleProfilePicker: vi.fn(),
+    onOpenHub: vi.fn(),
+    onCloseHub: vi.fn(),
     onSelectProfile: vi.fn(),
     onCreateProfile: vi.fn(),
     onDeleteProfile: vi.fn(),

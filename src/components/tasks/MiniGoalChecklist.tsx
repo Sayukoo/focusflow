@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import {
   breakdownSubGoalDetailed,
@@ -21,7 +21,9 @@ interface MiniGoalChecklistProps {
   onChange: (items: MiniGoal[]) => void;
 }
 
-export function MiniGoalChecklist({
+// PERF: memo — the parent re-renders once per second (timer tick); the
+// checklist only depends on its own items/callbacks, so skip the reconciliation.
+export const MiniGoalChecklist = memo(function MiniGoalChecklist({
   items,
   mainGoal,
   userAboutMe,
@@ -468,5 +470,5 @@ export function MiniGoalChecklist({
       </ul>
     </div>
   );
-}
+});
 

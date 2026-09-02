@@ -14,6 +14,8 @@ export interface Track {
   providerId?: string;
   providerKind?: string;
   thumbnail?: string;
+  /** Offline fallback: thumbnail cached locally as a data URL (no network needed). */
+  thumbnailDataUrl?: string;
   author?: string;
   category?: string;
   metadata?: Record<string, TrackMetadataValue>;
@@ -106,5 +108,7 @@ export interface PlayerSnapshot {
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
   playbackRate?: number;
+  /** Loudness normalization (per-track gain from offline Web Audio analysis). */
+  volumeNormalization?: boolean;
 }
 

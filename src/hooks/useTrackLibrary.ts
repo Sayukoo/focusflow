@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   fetchRemoteMetadata,
   fetchRemotePlaylistTracks,
+  hydrateYouTubeThumbnails,
   isSupportedAudioFile,
   isTauriRuntime,
   loadRemoteTracks,
@@ -12,6 +13,7 @@ import {
   saveRemoteTracks,
   uniqueFilename,
 } from "../lib/audio";
+import { DEFAULT_PHONK_TRACK_IDS } from "../lib/defaultTracks";
 import {
   assignTracksToProfile,
   getProfileTrackIds,
@@ -22,6 +24,12 @@ import {
   type ProfileStore,
 } from "../lib/profiles";
 import type { Track } from "../types";
+
+// Phonk starter tracks default into the Energizing profile instead of
+// whichever profile happens to be active when the library first loads.
+const DEFAULT_PROFILE_BY_TRACK_ID: Record<string, string> = Object.fromEntries(
+  DEFAULT_PHONK_TRACK_IDS.map((trackId) => [trackId, "energizing"]),
+);
 
 const AUDIO_FILTERS = [
   {
@@ -66,6 +74,22 @@ export function useTrackLibrary({
     [activeProfileIdRef, profileStoreRef],
   );
 
+  // OFFLINE MODE: download missing YouTube thumbnails as compact data URLs
+  // (bounded concurrency) so the library renders fully without network.
+  // Runs in the background; re-renders only tracks that gained a thumbnail.
+  const hydrateRemoteThumbnails = useCallback(async () => {
+    const next = await hydrateYouTubeThumbnails(remoteTracksRef.current);
+    if (!next) return;
+    remoteTracksRef.current = next;
+    saveRemoteTracks(next);
+    const locals = runningInTauri
+      ? await invoke<Track[]>("list_tracks").catch(() => [] as Track[])
+      : browserTracksRef.current;
+    const listed = filterTracksForProfile([...locals, ...next]);
+    tracksRef.current = listed;
+    setTracks(listed);
+  }, [filterTracksForProfile, runningInTauri]);
+
   const refresh = useCallback(async () => {
     if (!runningInTauri) {
       const allTracks = [
@@ -75,12 +99,14 @@ export function useTrackLibrary({
       const nextProfileStore = reconcileProfileTracks(
         profileStoreRef.current,
         allTracks.map((track) => track.id),
+        DEFAULT_PROFILE_BY_TRACK_ID,
       );
       commitProfileStore(nextProfileStore);
       const listed = filterTracksForProfile(allTracks);
       setMusicDir("Browser preview · selected files");
       setTracks(listed);
       tracksRef.current = listed;
+      void hydrateRemoteThumbnails();
       return listed;
     }
 
@@ -92,16 +118,19 @@ export function useTrackLibrary({
     const nextProfileStore = reconcileProfileTracks(
       profileStoreRef.current,
       allTracks.map((track) => track.id),
+      DEFAULT_PROFILE_BY_TRACK_ID,
     );
     commitProfileStore(nextProfileStore);
     const listed = filterTracksForProfile(allTracks);
     setMusicDir(dir);
     setTracks(listed);
     tracksRef.current = listed;
+    void hydrateRemoteThumbnails();
     return listed;
   }, [
     commitProfileStore,
     filterTracksForProfile,
+    hydrateRemoteThumbnails,
     profileStoreRef,
     runningInTauri,
   ]);

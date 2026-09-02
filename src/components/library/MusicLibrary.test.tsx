@@ -18,21 +18,16 @@ function renderLibrary(
 ) {
   render(
     <MusicLibrary
-      open
       tracks={[track]}
       activeProfileName="Deep Work"
       currentTrackCategory={null}
       currentTrackId={null}
       favoriteTrackIds={[]}
       favoritesOnly={false}
-      musicDir="C:\\music"
       busy={false}
-      onClose={vi.fn()}
       onImport={vi.fn()}
       onAddLink={vi.fn()}
       onDropFiles={vi.fn()}
-      onRefresh={vi.fn()}
-      onOpenFolder={vi.fn()}
       onSelect={vi.fn()}
       onRemove={onRemove}
       onToggleFavorite={vi.fn()}
@@ -65,5 +60,38 @@ describe("MusicLibrary delete action", () => {
       screen.getByRole("button", { name: "Play recent tracks" }),
     );
     expect(onPlayQueue).toHaveBeenCalledWith({ kind: "recent" }, track.id);
+  });
+
+  it("switches to Informacja o mnie tab and allows saving userAboutMe", () => {
+    const onUserAboutMeChange = vi.fn();
+    render(
+      <MusicLibrary
+        tracks={[track]}
+        activeProfileName="Deep Work"
+        currentTrackCategory={null}
+        currentTrackId={null}
+        favoriteTrackIds={[]}
+        favoritesOnly={false}
+        busy={false}
+        userAboutMe="Old context"
+        onUserAboutMeChange={onUserAboutMeChange}
+        onImport={vi.fn()}
+        onAddLink={vi.fn()}
+        onDropFiles={vi.fn()}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onPlayQueue={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Informacja o mnie" }));
+    const textarea = screen.getByRole("textbox", { name: "Informacje o mnie" });
+    expect(textarea).toHaveValue("Old context");
+
+    fireEvent.change(textarea, { target: { value: "New context text" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    expect(onUserAboutMeChange).toHaveBeenCalledWith("New context text");
   });
 });

@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -260,7 +261,9 @@ interface ThumbnailBackgroundProps {
  *  - When there is no thumbnail the panel falls back to the solid shell background
  *    and the CSS atmosphere gradient shows through.
  */
-export function ThumbnailBackground({
+// PERF: memo — parent re-renders every timer tick; the backdrop only changes
+// when the thumbnail or play state changes.
+export const ThumbnailBackground = memo(function ThumbnailBackground({
   thumbnail,
   isPlaying,
 }: ThumbnailBackgroundProps) {
@@ -361,7 +364,7 @@ export function ThumbnailBackground({
       <div className="thumbnail-bg__overlay" />
     </div>
   );
-}
+});
 
 /** Renders 3 separate blurred copies of the thumbnail for chromatic depth. */
 function ThumbnailLayers({ url }: { url: string }) {

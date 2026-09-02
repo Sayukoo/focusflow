@@ -4,6 +4,7 @@ import {
   useReducedMotion,
 } from "framer-motion";
 import {
+  memo,
   useEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -45,7 +46,9 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
-export function MobileMenu({
+// PERF: memo — parent re-renders every timer tick; the menu is almost always
+// closed, so skip its whole framer-motion tree unless something changed.
+export const MobileMenu = memo(function MobileMenu({
   open,
   profileLabel,
   durationLabel,
@@ -367,4 +370,4 @@ export function MobileMenu({
       ) : null}
     </AnimatePresence>
   );
-}
+});

@@ -58,9 +58,9 @@ export const TrackCard = memo(function TrackCard({
             className="track-card-art"
             aria-hidden="true"
             style={
-              track.thumbnail
+              (track.thumbnailDataUrl ?? track.thumbnail)
                 ? {
-                    backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${track.thumbnail}")`,
+                    backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${track.thumbnailDataUrl ?? track.thumbnail}")`,
                   }
                 : undefined
             }

@@ -1,8 +1,6 @@
-import { type ReactElement } from "react";
-import type { TimerSettings } from "../../types";
+import { memo, type ReactElement, type ReactNode } from "react";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
-import { AppLockButton } from "./AppLockButton";
 
 interface HeaderControlsProps {
   windowPinned: boolean;
@@ -10,30 +8,35 @@ interface HeaderControlsProps {
   volume?: number;
   onVolume?: (volume: number) => void;
   onSetWindowPinned: (pinned: boolean) => void | Promise<void>;
-  onToggleLibrary: (open: boolean) => void;
-  onToggleProfilePicker: (open: boolean) => void;
+  onOpenHub: () => void;
+  onOpenTimerSettings?: () => void;
   onOpenMobileMenu?: () => void;
   mobileMenuOpen?: boolean;
-  timerSettings?: TimerSettings;
-  onTimerSettingsChange?: (next: TimerSettings) => void;
+  leading?: ReactNode;
+  /** Zen mode: hide everything except the timer and the goal. */
+  zenMode?: boolean;
+  onToggleZen?: () => void;
 }
 
-export function HeaderControls({
+// PERF: memo — parent re-renders every timer tick; header is static between ticks.
+export const HeaderControls = memo(function HeaderControls({
   windowPinned,
   volume = 1,
   onVolume,
   onSetWindowPinned,
-  onToggleLibrary,
-  onToggleProfilePicker,
+  onOpenHub,
+  onOpenTimerSettings,
   onOpenMobileMenu,
   mobileMenuOpen = false,
-  timerSettings,
-  onTimerSettingsChange,
+  leading,
+  zenMode = false,
+  onToggleZen,
 }: HeaderControlsProps): ReactElement {
   const volumePct = Math.round(volume * 100);
 
   return (
     <div className="focus-top-right">
+      {leading}
       {windowPinned && (
         <div className="header-volume-wrapper volume-pin-control">
           <KaTeXTooltip formula={`\\text{Głośność: ${volumePct}\\%}`}>
@@ -53,6 +56,31 @@ export function HeaderControls({
             </div>
           </KaTeXTooltip>
         </div>
+      )}
+
+      {onToggleZen && (
+        <KaTeXTooltip
+          wrapperClassName="zen-control"
+          formula={
+            zenMode
+              ? "\\text{Wyjdź z trybu Zen}"
+              : "\\text{Tryb Zen: tylko timer}"
+          }
+        >
+          <button
+            type="button"
+            className={
+              zenMode
+                ? "icon-btn ghost zen-toggle-btn is-active"
+                : "icon-btn ghost zen-toggle-btn"
+            }
+            aria-label={zenMode ? "Exit Zen mode" : "Zen mode — timer only"}
+            aria-pressed={zenMode}
+            onClick={onToggleZen}
+          >
+            <Icon name="zen" size={18} />
+          </button>
+        </KaTeXTooltip>
       )}
 
       <KaTeXTooltip
@@ -80,32 +108,25 @@ export function HeaderControls({
         </button>
       </KaTeXTooltip>
 
-      <KaTeXTooltip formula="\text{Music library}">
+      <KaTeXTooltip formula="\text{Timer}">
         <button
           type="button"
-          className="icon-btn ghost music-library-btn"
-          aria-label="Open music library"
-          onClick={() => onToggleLibrary(true)}
+          className="icon-btn ghost timer-header-btn"
+          aria-label="Open timer settings"
+          onClick={onOpenTimerSettings}
         >
-          <Icon name="music-library" size={18} />
+          <Icon name="stopwatch" size={18} />
         </button>
       </KaTeXTooltip>
 
-      {timerSettings && onTimerSettingsChange ? (
-        <AppLockButton
-          settings={timerSettings}
-          onChange={onTimerSettingsChange}
-        />
-      ) : null}
-
-      <KaTeXTooltip formula="\text{Account \& Profiles}">
+      <KaTeXTooltip formula="\text{Centrum: muzyka · profile · biblioteka}">
         <button
           type="button"
-          className="icon-btn ghost profile-btn"
-          aria-label="Account & Profiles"
-          onClick={() => onToggleProfilePicker(true)}
+          className="icon-btn ghost hub-open-btn"
+          aria-label="Open hub — music, profiles and library"
+          onClick={() => onOpenHub()}
         >
-          <Icon name="user" size={18} />
+          <Icon name="library" size={18} />
         </button>
       </KaTeXTooltip>
 
@@ -126,5 +147,5 @@ export function HeaderControls({
       )}
     </div>
   );
-}
+});
 

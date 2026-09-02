@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIdleDetection } from "../../hooks/useIdleDetection";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import type { FocusAnalyticsStore } from "../../lib/analytics";
 import { isRemoteTrack, isTauriRuntime } from "../../lib/audio";
@@ -23,11 +24,12 @@ import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { MobileMenu } from "../ui/MobileMenu";
 import { KeyboardShortcutsModal } from "../ui/KeyboardShortcutsModal";
 import { MiniGoalChecklist } from "../tasks/MiniGoalChecklist";
-import { ProfilePicker, type FocusAnalyticsSummary } from "../settings/ProfilePicker";
+import type { FocusAnalyticsSummary } from "../settings/ProfilePicker";
 import { RemotePlayer } from "../audio/RemotePlayer";
-import { MusicLibrary } from "../library/MusicLibrary";
+import { HubPanel } from "../hub/HubPanel";
 import { TimerSettings as TimerSettingsModal } from "../settings/TimerSettings";
 import { PlaybackControls } from "./PlaybackControls";
+import { FocusStatsBadge } from "./FocusStatsBadge";
 import { HeaderControls } from "./HeaderControls";
 import { ThumbnailBackground } from "./ThumbnailBackground";
 import { ConfettiOverlay } from "./ConfettiOverlay";
@@ -41,7 +43,6 @@ interface FocusPlayerProps {
   activeProfileId: string;
   analyticsSummary?: FocusAnalyticsSummary;
   analyticsStore?: FocusAnalyticsStore;
-  profilePickerOpen: boolean;
   favoriteTrackIds: string[];
   favoritesOnly: boolean;
   currentTrackId: string | null;
@@ -56,13 +57,13 @@ interface FocusPlayerProps {
   mode: FocusMode;
   timerSettings: TimerSettings;
   timerSettingsOpen: boolean;
-  libraryOpen: boolean;
+  hubOpen: boolean;
   busy: boolean;
   error: string | null;
   browserMode: boolean;
   windowPinned: boolean;
-  onToggleLibrary: (open: boolean) => void;
-  onToggleProfilePicker: (open: boolean) => void;
+  onOpenHub: () => void;
+  onCloseHub: () => void;
   onSelectProfile: (profileId: string) => void | Promise<void>;
   onCreateProfile: (name: string) => void | Promise<void>;
   onDeleteProfile: (profileId: string) => void | Promise<void>;
@@ -81,6 +82,9 @@ interface FocusPlayerProps {
   onPrevious: () => void | Promise<void>;
   onVolume: (value: number) => void;
   onPlaybackRateChange?: (rate: number) => void;
+  /** Loudness normalization master switch (persisted in the snapshot). */
+  volumeNormalization?: boolean;
+  onToggleVolumeNormalization?: () => void;
   onSeek: (seconds: number) => void;
   onRemotePlaying: (playing: boolean) => void;
   onRemoteTime: (time: number) => void;
@@ -99,6 +103,29 @@ interface FocusPlayerProps {
 
 const CONFETTI_TAP_COUNT = 15;
 
+const ZEN_MODE_STORAGE_KEY = "brainfm.zen_mode";
+const UI_IDLE_DELAY_MS = 10_000;
+
+function readZenModePref(): boolean {
+  try {
+    return localStorage.getItem(ZEN_MODE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistZenModePref(value: boolean): void {
+  try {
+    if (value) {
+      localStorage.setItem(ZEN_MODE_STORAGE_KEY, "1");
+    } else {
+      localStorage.removeItem(ZEN_MODE_STORAGE_KEY);
+    }
+  } catch {
+    // Storage might be restricted.
+  }
+}
+
 export function FocusPlayer({
   tracks,
   currentTrack,
@@ -106,7 +133,6 @@ export function FocusPlayer({
   activeProfileId,
   analyticsSummary,
   analyticsStore,
-  profilePickerOpen,
   favoriteTrackIds,
   favoritesOnly,
   isPlaying,
@@ -120,12 +146,12 @@ export function FocusPlayer({
   mode,
   timerSettings,
   timerSettingsOpen,
-  libraryOpen,
+  hubOpen,
   error,
   browserMode,
   windowPinned,
-  onToggleLibrary,
-  onToggleProfilePicker,
+  onOpenHub,
+  onCloseHub,
   onSelectProfile,
   onCreateProfile,
   onDeleteProfile,
@@ -138,6 +164,8 @@ export function FocusPlayer({
   onPrevious,
   onVolume,
   onPlaybackRateChange,
+  volumeNormalization,
+  onToggleVolumeNormalization,
   onSeek,
   onRemotePlaying,
   onRemoteTime,
@@ -164,14 +192,26 @@ export function FocusPlayer({
 }: FocusPlayerProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hotkeysModalOpen, setHotkeysModalOpen] = useState(false);
+  const [zenMode, setZenMode] = useState(() => readZenModePref());
+  // Zen companion: after 10s without input the chrome fades to 10%.
+  const uiIdle = useIdleDetection(UI_IDLE_DELAY_MS);
+
+  const handleToggleZen = useCallback(() => {
+    setZenMode((prev) => {
+      const next = !prev;
+      persistZenModePref(next);
+      return next;
+    });
+  }, []);
 
   useKeyboardShortcuts({
     onTogglePlay: () => void onTogglePlay(),
     onNext: () => void onNext(),
     onPrevious: () => void onPrevious(),
-    onToggleLibrary: () => onToggleLibrary(!libraryOpen),
-    onToggleTimer: () => (timerSettingsOpen ? onCloseTimerSettings() : openFullTimerSettings()),
-    onToggleProfile: () => onToggleProfilePicker(!profilePickerOpen),
+    onToggleLibrary: () => (hubOpen ? onCloseHub() : onOpenHub()),
+    onToggleTimer: () =>
+      timerSettingsOpen ? onCloseTimerSettings() : openFullTimerSettings(),
+    onToggleProfile: () => (hubOpen ? onCloseHub() : onOpenHub()),
     onToggleShortcuts: () => setHotkeysModalOpen((prev) => !prev),
     onSpeedUp: () => {
       if (onPlaybackRateChange) {
@@ -190,16 +230,16 @@ export function FocusPlayer({
         setHotkeysModalOpen(false);
         return;
       }
-      if (libraryOpen) {
-        onToggleLibrary(false);
-        return;
-      }
       if (timerSettingsOpen) {
         onCloseTimerSettings();
         return;
       }
-      if (profilePickerOpen) {
-        onToggleProfilePicker(false);
+      if (hubOpen) {
+        onCloseHub();
+        return;
+      }
+      if (zenMode) {
+        handleToggleZen();
         return;
       }
       if (windowPinned) {
@@ -325,7 +365,7 @@ export function FocusPlayer({
     setDraftGoal(timerSettings.goal);
   }, [timerSettings.goal]);
 
-  const handleQuickPomodoro = () => {
+  const handleQuickPomodoro = useCallback(() => {
     const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
     updateFn?.({
       ...timerSettings,
@@ -336,12 +376,17 @@ export function FocusPlayer({
     });
     setTimerSettingsCompact(true);
     onOpenTimerSettings();
-  };
+  }, [
+    onChangeTimerSettings,
+    onOpenTimerSettings,
+    onTimerSettingsChange,
+    timerSettings,
+  ]);
 
-  const openFullTimerSettings = () => {
+  const openFullTimerSettings = useCallback(() => {
     setTimerSettingsCompact(false);
     onOpenTimerSettings();
-  };
+  }, [onOpenTimerSettings]);
 
   const handleTrayQuickPomodoro = useCallback(() => {
     const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
@@ -434,6 +479,30 @@ export function FocusPlayer({
     [onChangeTimerSettings, onTimerSettingsChange, timerSettings],
   );
 
+  const handleMiniGoalsChange = useCallback(
+    (next: MiniGoal[]) => {
+      const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+      updateFn?.({
+        ...timerSettings,
+        miniGoals: next,
+      });
+    },
+    [onChangeTimerSettings, onTimerSettingsChange, timerSettings],
+  );
+
+  // PERF: stable identities so the memoized HubPanel does not re-render on
+  // every playback progress tick.
+  const handleHubSelectTrack = useCallback(
+    (trackId: string) => {
+      void onSelectTrack(trackId, false);
+    },
+    [onSelectTrack],
+  );
+  const handleHeaderOpenHub = useCallback(() => {
+    setMobileMenuOpen(false);
+    onOpenHub();
+  }, [onOpenHub]);
+
   const handleGoalKeyDown = (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
@@ -459,12 +528,12 @@ export function FocusPlayer({
   const durationSummary = useMemo(() => {
     if (timerSettings.kind === "infinite") return "Infinite focus";
     if (timerSettings.kind === "intervals") {
-      const phaseLabel = (mode as string) === "break" ? "Break" : "Work";
+      const phaseLabel = isBreakPhase ? "Break" : "Work";
       return `${phaseLabel} · ${timerSettings.workDurationMinutes}m / ${timerSettings.breakDurationMinutes}m`;
     }
     return `${timerSettings.durationMinutes ?? 60}m session`;
   }, [
-    mode,
+    isBreakPhase,
     timerSettings.breakDurationMinutes,
     timerSettings.durationMinutes,
     timerSettings.kind,
@@ -473,28 +542,58 @@ export function FocusPlayer({
 
   const windowPinAvailable = true;
 
-  const handleMiniGoalsChange = (next: MiniGoal[]) => {
-    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
-    updateFn?.({
-      ...timerSettings,
-      miniGoals: next,
-    });
-  };
+  const handleSetFavoriteBursting = useCallback((bursting: boolean) => {
+    if (favoriteBurstTimerRef.current !== null) {
+      window.clearTimeout(favoriteBurstTimerRef.current);
+    }
+    setFavoriteBursting(bursting);
+    if (bursting) {
+      favoriteBurstTimerRef.current = window.setTimeout(() => {
+        favoriteBurstTimerRef.current = null;
+        setFavoriteBursting(false);
+      }, 760);
+    }
+  }, []);
 
-  const openMobileTimer = () => {
+  // PERF: stable identities so the memoized header/meta/menu children skip
+  // re-renders on every one-second timer tick.
+  const openMobileMenu = useCallback(() => setMobileMenuOpen(true), []);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  const openMobileTimer = useCallback(() => {
     setMobileMenuOpen(false);
     openFullTimerSettings();
-  };
-
-  const openMobileLibrary = () => {
+  }, [openFullTimerSettings]);
+  const openMobileLibrary = useCallback(() => {
     setMobileMenuOpen(false);
-    onToggleLibrary(true);
-  };
+    onOpenHub();
+  }, [onOpenHub]);
+  const openMobileProfiles = openMobileLibrary;
+  const handleRequestCategory = useCallback(
+    (track: Track) => {
+      void requestCategory(track);
+    },
+    [requestCategory],
+  );
 
-  const openMobileProfiles = () => {
-    setMobileMenuOpen(false);
-    onToggleProfilePicker(true);
-  };
+  const quickPomodoroControl = useMemo(
+    () =>
+      !isBreakPhase ? (
+        <KaTeXTooltip
+          wrapperClassName="quick-pomodoro-control"
+          formula="\text{25 min pracy / 5 min przerwy}"
+        >
+          <button
+            type="button"
+            className="quick-pomodoro-btn"
+            aria-label="Ustaw Pomodoro 25 minut pracy, 5 minut przerwy"
+            onClick={handleQuickPomodoro}
+          >
+            25 / 5
+          </button>
+        </KaTeXTooltip>
+      ) : undefined,
+    [handleQuickPomodoro, isBreakPhase],
+  );
 
   const handleTimerTap = () => {
     timerTapCountRef.current += 1;
@@ -512,25 +611,14 @@ export function FocusPlayer({
     }, 2_000);
   };
 
-  const handleSetFavoriteBursting = (bursting: boolean) => {
-    if (favoriteBurstTimerRef.current !== null) {
-      window.clearTimeout(favoriteBurstTimerRef.current);
-    }
-    setFavoriteBursting(bursting);
-    if (bursting) {
-      favoriteBurstTimerRef.current = window.setTimeout(() => {
-        favoriteBurstTimerRef.current = null;
-        setFavoriteBursting(false);
-      }, 760);
-    }
-  };
-
   const shellClasses = [
     "focus-shell",
     `mode-${mode}`,
     browserMode ? "is-browser" : "",
     windowPinned ? "is-window-pinned" : "",
     favoritesOnly ? "is-favorites-only" : "",
+    zenMode ? "is-zen" : "",
+    uiIdle ? "is-ui-idle" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -538,7 +626,7 @@ export function FocusPlayer({
   return (
     <div className={shellClasses}>
       <ThumbnailBackground
-        thumbnail={currentTrack?.thumbnail}
+        thumbnail={currentTrack?.thumbnailDataUrl ?? currentTrack?.thumbnail}
         isPlaying={isPlaying}
       />
       <div className="focus-atmosphere" aria-hidden="true" />
@@ -546,7 +634,12 @@ export function FocusPlayer({
       {confettiBursting ? <ConfettiOverlay burstId={confettiBurstId} /> : null}
 
       <header className="focus-top">
-        <div className="focus-top-left" />
+        <div className="focus-top-left">
+          <FocusStatsBadge
+            streakDays={analyticsSummary?.streakDays ?? 0}
+            todaySeconds={analyticsSummary?.todaySeconds ?? 0}
+          />
+        </div>
 
         <HeaderControls
           windowPinned={windowPinned}
@@ -554,32 +647,15 @@ export function FocusPlayer({
           volume={volume}
           onVolume={onVolume}
           onSetWindowPinned={onSetWindowPinned}
-          onToggleLibrary={(open) => {
-            if (open) onToggleProfilePicker(false);
-            onToggleLibrary(open);
-          }}
-          onToggleProfilePicker={(open) => {
-            if (open) onToggleLibrary(false);
-            onToggleProfilePicker(open);
-          }}
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          onOpenHub={handleHeaderOpenHub}
+          onOpenTimerSettings={openFullTimerSettings}
+          onOpenMobileMenu={openMobileMenu}
           mobileMenuOpen={mobileMenuOpen}
-          timerSettings={timerSettings}
-          onTimerSettingsChange={onTimerSettingsChange ?? onChangeTimerSettings}
+          leading={quickPomodoroControl}
+          zenMode={zenMode}
+          onToggleZen={handleToggleZen}
         />
       </header>
-
-      <ProfilePicker
-        open={profilePickerOpen}
-        profiles={profiles}
-        activeProfileId={activeProfileId}
-        userAboutMe={timerSettings.userAboutMe}
-        onClose={() => onToggleProfilePicker(false)}
-        onSelect={onSelectProfile}
-        onCreate={onCreateProfile}
-        onDelete={onDeleteProfile}
-        onUserAboutMeChange={onUserAboutMeChange}
-      />
 
       <MobileMenu
         open={mobileMenuOpen}
@@ -593,7 +669,7 @@ export function FocusPlayer({
         windowPinAvailable={windowPinAvailable}
         analyticsSummary={analyticsSummary}
         analyticsStore={analyticsStore}
-        onClose={() => setMobileMenuOpen(false)}
+        onClose={closeMobileMenu}
         onOpenTimer={openMobileTimer}
         onOpenLibrary={openMobileLibrary}
         onOpenProfiles={openMobileProfiles}
@@ -605,19 +681,6 @@ export function FocusPlayer({
       />
 
       <main className="focus-center">
-        {!isBreakPhase ? (
-          <KaTeXTooltip formula="\text{25 min pracy / 5 min przerwy}">
-            <button
-              type="button"
-              className="quick-pomodoro-btn"
-              aria-label="Ustaw Pomodoro 25 minut pracy, 5 minut przerwy"
-              onClick={handleQuickPomodoro}
-            >
-              25 / 5
-            </button>
-          </KaTeXTooltip>
-        ) : null}
-
         <div
           className="timer-display"
           aria-label={`Timer ${timerLabel}`}
@@ -681,9 +744,9 @@ export function FocusPlayer({
           favoriteBursting={favoriteBursting}
           categoryStatus={categoryStatus}
           currentCategory={currentCategory}
-          onToggleLibrary={onToggleLibrary}
+          onOpenHub={onOpenHub}
           onToggleFavorite={onToggleFavorite}
-          onRequestCategory={(track) => void requestCategory(track)}
+          onRequestCategory={handleRequestCategory}
           onSetFavoriteBursting={handleSetFavoriteBursting}
         />
 
@@ -701,6 +764,20 @@ export function FocusPlayer({
         />
 
         <div className="focus-controls focus-stats">
+          {onToggleVolumeNormalization ? (
+            <button
+              type="button"
+              className={
+                volumeNormalization ? "norm-toggle is-active" : "norm-toggle"
+              }
+              aria-pressed={Boolean(volumeNormalization)}
+              aria-label="Normalizacja głośności"
+              title="Normalizacja głośności"
+              onClick={onToggleVolumeNormalization}
+            >
+              <Icon name="gauge" size={17} />
+            </button>
+          ) : null}
           <KaTeXTooltip formula={`\\text{Volume: ${Math.round(volume * 100)}\\%}`}>
             <div className="volume" aria-label="Volume strip">
               <Icon name="volume" size={18} />
@@ -734,8 +811,9 @@ export function FocusPlayer({
         />
       ) : null}
 
-      <MusicLibrary
-        open={libraryOpen}
+      <HubPanel
+        open={hubOpen}
+        onClose={onCloseHub}
         tracks={tracks}
         activeProfileName={profileLabel}
         currentTrackCategory={currentCategory}
@@ -744,16 +822,22 @@ export function FocusPlayer({
         favoritesOnly={favoritesOnly}
         musicDir={musicDir}
         busy={busy}
-        onClose={() => onToggleLibrary(false)}
         onImport={onImport}
         onAddLink={onAddLink}
         onDropFiles={onDropFiles}
-        onRefresh={onRefresh}
         onOpenFolder={onOpenFolder}
-        onSelect={onSelectTrack}
-        onRemove={onRemoveTrack}
+        onSelectTrack={handleHubSelectTrack}
+        onRemoveTrack={onRemoveTrack}
         onToggleFavorite={onToggleFavorite}
         onPlayQueue={onPlayQueue}
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        analyticsStore={analyticsStore}
+        userAboutMe={timerSettings.userAboutMe}
+        onSelectProfile={onSelectProfile}
+        onCreateProfile={onCreateProfile}
+        onDeleteProfile={onDeleteProfile}
+        onUserAboutMeChange={onUserAboutMeChange}
       />
 
       <TimerSettingsModal

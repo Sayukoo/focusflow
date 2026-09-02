@@ -4,13 +4,46 @@ import type {
   TimerSettings,
   Track,
 } from "../types";
-import { DEFAULT_LOFI_TRACKS } from "./defaultTracks";
+import { DEFAULT_LOFI_TRACKS, DEFAULT_PHONK_TRACKS } from "./defaultTracks";
 import { getIntervalPhase } from "./timer";
 
 const REMOTE_LIBRARY_KEY = "focusflow.remote-library";
 const LEGACY_YOUTUBE_LIBRARY_KEY = "focusflow.youtube-library";
 const FAVORITES_KEY = "focusflow.favorites";
-const LOFI_PACK_SEEDED_KEY = "focusflow.lofi-pack-seeded";
+// Bumped from "focusflow.lofi-pack-seeded" so the broken 24/7 livestream
+// pack below gets replaced with standalone tracks even for installs that
+// already ran the old seeding pass.
+const LOFI_PACK_SEEDED_KEY = "focusflow.lofi-pack-seeded-v2";
+const PHONK_PACK_SEEDED_KEY = "focusflow.phonk-pack-seeded-v1";
+
+// Video IDs from the old "24/7 lofi radio" default pack. Those are YouTube
+// live streams, not fixed-length videos — once the underlying live session
+// rotates or ends the embedded player is left with no audio, so they're
+// purged from any library that still has them saved locally.
+const LEGACY_LIVE_TRACK_IDS = new Set(
+  [
+    "5qap5aO4i9A",
+    "jfKfPfyJRdk",
+    "7NOSDKb0HlU",
+    "CFGLoQIhmow",
+    "8b3fqIBrNW0",
+    "7ccH8u8fj8Y",
+    "i43tkaTXtwI",
+    "n61ULEU7CO0",
+    "-FlxM_0S2lA",
+    "5yx6BWlEVcY",
+    "Liv0MXUPiqo",
+    "B1ggnlaiHkQ",
+    "amTJUg8-AhI",
+    "LoUrZk9hI-o",
+    "fg_R967cUBI",
+    "sF80I-TQiW0",
+    "7TgS-e0mJaY",
+    "WeBYtv2Bv7c",
+    "vL4AypJbhkE",
+    "kJMRpId0H50",
+  ].map((videoId) => `youtube:${videoId}`),
+);
 
 export function formatClock(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
@@ -263,7 +296,101 @@ function hashRemoteUrl(value: string): string {
 }
 
 export function youtubeThumbnail(videoId: string): string {
-  return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+  return youTubeThumbnailUrl(videoId, "hq");
+}
+
+export function youTubeThumbnailUrl(
+  videoId: string,
+  quality: "hq" | "mq" = "hq",
+): string {
+  return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/${quality}default.jpg`;
+}
+
+/* --------------------------------------------------------------------------
+   OFFLINE MODE FOR YOUTUBE TRACKS
+   Metadata (title/author/category) is already persisted in localStorage;
+   here we additionally cache the thumbnail itself as a compact data URL so
+   the library and backdrop render fully offline. Uses mqdefault (~320x180,
+   a dozen KB) — it is only ever shown blurred or in small cards.
+   -------------------------------------------------------------------------- */
+
+const THUMBNAIL_FETCH_TIMEOUT_MS = 8000;
+const THUMBNAIL_MAX_BYTES = 400_000;
+
+function blobToDataUrl(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function fetchThumbnailDataUrl(
+  url: string,
+): Promise<string | null> {
+  try {
+    if (!/^https?:\/\//i.test(url)) return null;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      THUMBNAIL_FETCH_TIMEOUT_MS,
+    );
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/") || blob.size > THUMBNAIL_MAX_BYTES) {
+        return null;
+      }
+      return await blobToDataUrl(blob);
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Downloads missing thumbnails for cached YouTube tracks (bounded concurrency)
+ * and returns an updated array — changed tracks are shallow clones so React
+ * memoization notices them. Returns null when there was nothing to add.
+ */
+export async function hydrateYouTubeThumbnails(
+  tracks: Track[],
+): Promise<Track[] | null> {
+  const missing = tracks.filter(
+    (track) =>
+      track.source === "youtube" &&
+      track.videoId &&
+      !track.thumbnailDataUrl,
+  );
+  if (missing.length === 0) return null;
+
+  const dataUrls = new Map<string, string>();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < missing.length) {
+      const track = missing[cursor];
+      cursor += 1;
+      if (!track.videoId) continue;
+      const dataUrl = await fetchThumbnailDataUrl(
+        youTubeThumbnailUrl(track.videoId, "mq"),
+      );
+      if (dataUrl && !dataUrls.has(track.videoId)) {
+        dataUrls.set(track.videoId, dataUrl);
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  if (dataUrls.size === 0) return null;
+
+  return tracks.map((track) => {
+    const dataUrl = track.videoId ? dataUrls.get(track.videoId) : undefined;
+    return dataUrl ? { ...track, thumbnailDataUrl: dataUrl } : track;
+  });
 }
 
 export async function fetchYouTubeMetadata(
@@ -603,7 +730,7 @@ export function loadRemoteTracks(): Track[] {
       localStorage.getItem(REMOTE_LIBRARY_KEY),
       localStorage.getItem(LEGACY_YOUTUBE_LIBRARY_KEY),
     ].filter((value): value is string => Boolean(value));
-    const tracks: Track[] = [];
+    let tracks: Track[] = [];
 
     for (const raw of rawValues) {
       const parsed = JSON.parse(raw) as unknown;
@@ -615,6 +742,15 @@ export function loadRemoteTracks(): Track[] {
       }
     }
 
+    const hadLegacyLiveTracks = tracks.some((track) =>
+      LEGACY_LIVE_TRACK_IDS.has(track.id),
+    );
+    if (hadLegacyLiveTracks) {
+      tracks = tracks.filter((track) => !LEGACY_LIVE_TRACK_IDS.has(track.id));
+    }
+
+    let seededNewPack = false;
+
     if (localStorage.getItem(LOFI_PACK_SEEDED_KEY) !== "true") {
       const existingIds = new Set(tracks.map((track) => track.id));
       const additions = DEFAULT_LOFI_TRACKS.filter(
@@ -622,6 +758,20 @@ export function loadRemoteTracks(): Track[] {
       ).map((track) => ({ ...track }));
       tracks.push(...additions);
       localStorage.setItem(LOFI_PACK_SEEDED_KEY, "true");
+      seededNewPack = true;
+    }
+
+    if (localStorage.getItem(PHONK_PACK_SEEDED_KEY) !== "true") {
+      const existingIds = new Set(tracks.map((track) => track.id));
+      const additions = DEFAULT_PHONK_TRACKS.filter(
+        (track) => !existingIds.has(track.id),
+      ).map((track) => ({ ...track }));
+      tracks.push(...additions);
+      localStorage.setItem(PHONK_PACK_SEEDED_KEY, "true");
+      seededNewPack = true;
+    }
+
+    if (hadLegacyLiveTracks || seededNewPack) {
       saveRemoteTracks(tracks);
     }
 
@@ -631,8 +781,32 @@ export function loadRemoteTracks(): Track[] {
   }
 }
 
+// Keep the persisted remote library comfortably below the ~5MB
+// localStorage quota; drop cached data-URL thumbnails (oldest entries first)
+// when the payload would exceed this budget.
+const REMOTE_LIBRARY_MAX_JSON_BYTES = 3_500_000;
+
 export function saveRemoteTracks(tracks: Track[]): void {
-  localStorage.setItem(REMOTE_LIBRARY_KEY, JSON.stringify(tracks));
+  let payload = tracks;
+  let json = JSON.stringify(payload);
+  if (json.length > REMOTE_LIBRARY_MAX_JSON_BYTES) {
+    payload = [...tracks];
+    for (
+      let index = payload.length - 1;
+      index >= 0 && json.length > REMOTE_LIBRARY_MAX_JSON_BYTES;
+      index -= 1
+    ) {
+      if (payload[index].thumbnailDataUrl) {
+        payload[index] = { ...payload[index], thumbnailDataUrl: undefined };
+        json = JSON.stringify(payload);
+      }
+    }
+  }
+  try {
+    localStorage.setItem(REMOTE_LIBRARY_KEY, json);
+  } catch {
+    // Storage might be full or restricted — keep the in-memory library working.
+  }
 }
 
 export function loadYouTubeTracks(): Track[] {
@@ -679,6 +853,7 @@ export function loadPlayerSnapshot(): Partial<{
   durationPreset: DurationPreset | string;
   timerSettings: TimerSettings;
   playbackRate: number;
+  volumeNormalization: boolean;
 }> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -696,6 +871,7 @@ export function savePlayerSnapshot(snapshot: {
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
   playbackRate?: number;
+  volumeNormalization?: boolean;
 }): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }

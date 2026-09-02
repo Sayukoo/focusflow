@@ -838,11 +838,22 @@ function buildPortableWindowsExe(iconVerification) {
   );
 
   const webview2Loader = join(dirname(executable), "WebView2Loader.dll");
-  copyArtifact(
-    webview2Loader,
-    join(releaseRoot, "WebView2Loader.dll"),
-    "WebView2Loader.dll",
-  );
+  const webview2Candidate = existsSync(webview2Loader)
+    ? webview2Loader
+    : findFiles(
+        targetRelease,
+        (path, name) =>
+          name.toLowerCase() === "webview2loader.dll" &&
+          (path.includes("x64") || !path.includes("arm64")),
+      )[0];
+
+  if (webview2Candidate && existsSync(webview2Candidate)) {
+    copyArtifact(
+      webview2Candidate,
+      join(releaseRoot, "WebView2Loader.dll"),
+      "WebView2Loader.dll",
+    );
+  }
 
   return portableExe;
 }

@@ -9,8 +9,7 @@ describe("HeaderControls", () => {
         windowPinned={false}
         volume={0.7}
         onSetWindowPinned={vi.fn()}
-        onToggleLibrary={vi.fn()}
-        onToggleProfilePicker={vi.fn()}
+        onOpenHub={vi.fn()}
       />
     );
 
@@ -28,8 +27,7 @@ describe("HeaderControls", () => {
         volume={0.8}
         onVolume={onVolume}
         onSetWindowPinned={vi.fn()}
-        onToggleLibrary={vi.fn()}
-        onToggleProfilePicker={vi.fn()}
+        onOpenHub={vi.fn()}
         onOpenMobileMenu={onOpenMobileMenu}
       />
     );
@@ -43,6 +41,43 @@ describe("HeaderControls", () => {
     expect(slider).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: "0.2" } });
     expect(onVolume).toHaveBeenCalledWith(0.2);
+  });
+
+  it("opens the unified hub from a single header button", () => {
+    const onOpenHub = vi.fn();
+
+    render(
+      <HeaderControls
+        windowPinned={false}
+        volume={0.7}
+        onSetWindowPinned={vi.fn()}
+        onOpenHub={onOpenHub}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open hub — music, profiles and library/i,
+      }),
+    );
+    expect(onOpenHub).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens timer settings from the header timer button", () => {
+    const onOpenTimerSettings = vi.fn();
+
+    render(
+      <HeaderControls
+        windowPinned={false}
+        volume={0.7}
+        onSetWindowPinned={vi.fn()}
+        onOpenHub={vi.fn()}
+        onOpenTimerSettings={onOpenTimerSettings}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /open timer settings/i }));
+    expect(onOpenTimerSettings).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -15,7 +15,9 @@ interface ProfilePickerProps {
   profiles: MusicProfile[];
   activeProfileId: string;
   userAboutMe?: string;
-  onClose: () => void;
+  /** Render without the floating popover chrome — used inside the hub panel. */
+  embedded?: boolean;
+  onClose?: () => void;
   onSelect: (profileId: string) => void | Promise<void>;
   onCreate: (name: string) => void | Promise<void>;
   onDelete: (profileId: string) => void | Promise<void>;
@@ -27,6 +29,7 @@ export const ProfilePicker = memo(function ProfilePicker({
   profiles,
   activeProfileId,
   userAboutMe,
+  embedded = false,
   onClose,
   onSelect,
   onCreate,
@@ -55,29 +58,33 @@ export const ProfilePicker = memo(function ProfilePicker({
 
   return (
     <div
-      className="profile-popover"
+      className={
+        embedded ? "profile-popover is-embedded" : "profile-popover"
+      }
       role="dialog"
       aria-label="Account and Profile Settings"
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="profile-popover-header">
-        <div className="profile-popover-header-title">
-          <strong>Account & Profiles</strong>
-          <span className="profile-privacy-tag">
-            <span className="profile-privacy-badge">Private on device</span>
-          </span>
+      {embedded ? null : (
+        <div className="profile-popover-header">
+          <div className="profile-popover-header-title">
+            <strong>Account & Profiles</strong>
+            <span className="profile-privacy-tag">
+              <span className="profile-privacy-badge">Private on device</span>
+            </span>
+          </div>
+          <KaTeXTooltip formula="\text{Close settings}">
+            <button
+              type="button"
+              className="icon-btn ghost profile-close-btn"
+              aria-label="Close settings"
+              onClick={onClose}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </KaTeXTooltip>
         </div>
-        <KaTeXTooltip formula="\text{Close settings}">
-          <button
-            type="button"
-            className="icon-btn ghost profile-close-btn"
-            aria-label="Close settings"
-            onClick={onClose}
-          >
-            <Icon name="close" size={16} />
-          </button>
-        </KaTeXTooltip>
-      </div>
+      )}
 
       <div className="profile-options" role="listbox" aria-label="Profiles">
         {profiles.map((profile) => {
@@ -137,45 +144,47 @@ export const ProfilePicker = memo(function ProfilePicker({
         </button>
       </form>
 
-      <div className="profile-about-me-section">
-        <div className="profile-about-me-header">
-          <span className="profile-about-me-title">Informacje o mnie</span>
-          <span className="profile-about-me-subtitle">Pamięć AI</span>
-        </div>
-        <div className="profile-about-me-wrap">
-          <textarea
-            rows={5}
-            maxLength={4000}
-            placeholder="Opisz swój kontekst, rolę, preferencje lub nuanse (np. 'Jestem psychologiem, miewam lęk przed oceną, lubię małe kroki...')"
-            value={draftAboutMe}
-            aria-label="Informacje o mnie"
-            onChange={(event) => setDraftAboutMe(event.target.value)}
-          />
-          <div className="profile-about-me-footer">
-            <span className="profile-about-me-counter">
-              {draftAboutMe.length} / 4000
-            </span>
-            <button
-              type="button"
-              className={
-                justSaved
-                  ? "profile-about-me-save-btn is-saved"
-                  : "profile-about-me-save-btn"
-              }
-              disabled={!isChanged && !justSaved}
-              onClick={handleSaveAboutMe}
-            >
-              {justSaved ? (
-                <>
-                  <Icon name="check" size={14} /> Zapisano
-                </>
-              ) : (
-                "Zapisz"
-              )}
-            </button>
+      {!embedded ? (
+        <div className="profile-about-me-section">
+          <div className="profile-about-me-header">
+            <span className="profile-about-me-title">Informacje o mnie</span>
+            <span className="profile-about-me-subtitle">Pamięć AI</span>
+          </div>
+          <div className="profile-about-me-wrap">
+            <textarea
+              rows={5}
+              maxLength={4000}
+              placeholder="Opisz swój kontekst, rolę, preferencje lub nuanse (np. 'Jestem psychologiem, miewam lęk przed oceną, lubię małe kroki...')"
+              value={draftAboutMe}
+              aria-label="Informacje o mnie"
+              onChange={(event) => setDraftAboutMe(event.target.value)}
+            />
+            <div className="profile-about-me-footer">
+              <span className="profile-about-me-counter">
+                {draftAboutMe.length} / 4000
+              </span>
+              <button
+                type="button"
+                className={
+                  justSaved
+                    ? "profile-about-me-save-btn is-saved"
+                    : "profile-about-me-save-btn"
+                }
+                disabled={!isChanged && !justSaved}
+                onClick={handleSaveAboutMe}
+              >
+                {justSaved ? (
+                  <>
+                    <Icon name="check" size={14} /> Zapisano
+                  </>
+                ) : (
+                  "Zapisz"
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }, (previous, next) => {
@@ -185,6 +194,7 @@ export const ProfilePicker = memo(function ProfilePicker({
     previous.profiles === next.profiles &&
     previous.activeProfileId === next.activeProfileId &&
     previous.userAboutMe === next.userAboutMe &&
+    previous.embedded === next.embedded &&
     previous.onClose === next.onClose &&
     previous.onSelect === next.onSelect &&
     previous.onCreate === next.onCreate &&

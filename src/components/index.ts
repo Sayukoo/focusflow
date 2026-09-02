@@ -18,11 +18,15 @@ export { MiniGoalChecklist } from "./tasks/MiniGoalChecklist";
 // Library
 export { MusicLibrary } from "./library/MusicLibrary";
 
+// Unified hub (library + account & profiles + timer shortcut)
+export { HubPanel } from "./hub/HubPanel";
+
 // Settings & Profiles
 export { TimerSettings } from "./settings/TimerSettings";
 export { ProfilePicker } from "./settings/ProfilePicker";
 
 // Player
 export { FocusPlayer } from "./player/FocusPlayer";
+export { FocusStatsBadge } from "./player/FocusStatsBadge";
 export { PlaybackControls } from "./player/PlaybackControls";
 export { HeaderControls } from "./player/HeaderControls";

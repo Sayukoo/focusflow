@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { Track } from "../../types";
 import type { TrackCategory, TrackCategoryStatus } from "../../lib/gemini";
 import { Icon } from "../ui/Icon";
@@ -14,29 +14,31 @@ interface TrackMetaDisplayProps {
   favoriteBursting: boolean;
   categoryStatus: TrackCategoryStatus;
   currentCategory: TrackCategory | null;
-  onToggleLibrary: (open: boolean) => void;
+  onOpenHub: () => void;
   onToggleFavorite: (trackId: string) => void;
   onRequestCategory: (track: Track) => void;
   onSetFavoriteBursting: (bursting: boolean) => void;
 }
 
-export function TrackMetaDisplay({
+// PERF: memo — parent re-renders every timer tick; track meta rarely changes.
+export const TrackMetaDisplay = memo(function TrackMetaDisplay({
   currentTrack,
   favoriteTrackIds,
   favoriteBursting,
   categoryStatus,
   currentCategory,
-  onToggleLibrary,
+  onOpenHub,
   onToggleFavorite,
   onRequestCategory,
   onSetFavoriteBursting,
 }: TrackMetaDisplayProps) {
   const coverStyle = useMemo(() => {
-    if (!currentTrack?.thumbnail) return undefined;
+    const art = currentTrack?.thumbnailDataUrl ?? currentTrack?.thumbnail;
+    if (!art) return undefined;
     return {
-      backgroundImage: `linear-gradient(135deg, rgba(20, 30, 48, 0.2), rgba(10, 15, 25, 0.6)), url("${currentTrack.thumbnail}")`,
+      backgroundImage: `linear-gradient(135deg, rgba(20, 30, 48, 0.2), rgba(10, 15, 25, 0.6)), url("${art}")`,
     };
-  }, [currentTrack?.thumbnail]);
+  }, [currentTrack?.thumbnail, currentTrack?.thumbnailDataUrl]);
 
   const sourceLabel = useMemo(() => {
     if (!currentTrack) return "No track selected";
@@ -114,7 +116,7 @@ export function TrackMetaDisplay({
           className="cover"
           aria-label={currentTrack?.title ?? "No track"}
           style={coverStyle}
-          onClick={() => onToggleLibrary(true)}
+          onClick={() => onOpenHub()}
         >
           <span className="cover-glow" aria-hidden="true">
             <Icon name="music" size={28} />
@@ -133,7 +135,7 @@ export function TrackMetaDisplay({
           <button
             type="button"
             className="now-title"
-            onClick={() => onToggleLibrary(true)}
+            onClick={() => onOpenHub()}
           >
             {currentTrack?.title ?? "—"}
           </button>
@@ -195,10 +197,10 @@ export function TrackMetaDisplay({
               onSetFavoriteBursting(true);
             }}
           >
-            <Icon name="heart" size={19} />
+              <Icon name="heart" size={19} />
           </button>
         </KaTeXTooltip>
       </div>
     </div>
   );
-}
+});

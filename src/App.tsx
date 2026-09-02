@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FocusPlayer } from "./components";
 import { useAudioLibrary } from "./hooks/useAudioLibrary";
 import { ensureWindowsAutostart } from "./lib/autostart";
@@ -30,14 +30,153 @@ function App() {
     };
   }, []);
 
-  const handleSetWindowPinned = async (pinned: boolean) => {
-    try {
-      await setNativeWindowPinned(pinned);
-      setWindowPinnedState(pinned);
-    } catch (error) {
+  const handleSetWindowPinned = useCallback(
+    async (pinned: boolean) => {
+      try {
+        await setNativeWindowPinned(pinned);
+        setWindowPinnedState(pinned);
+      } catch (error) {
+        player.setError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [player.setError],
+  );
+
+  // PERF: stable identities so memoized children of FocusPlayer can actually
+  // skip re-renders while progress/timer ticks stream through the app.
+  const handleCloseHub = useCallback(
+    () => player.setHubOpen(false),
+    [player.setHubOpen],
+  );
+  const handleSelectProfile = useCallback(
+    (profileId: string) => void player.switchProfile(profileId),
+    [player.switchProfile],
+  );
+  const handleCreateProfile = useCallback(
+    (name: string) => void player.createProfile(name),
+    [player.createProfile],
+  );
+  const handleDeleteProfile = useCallback(
+    (profileId: string) => void player.deleteProfile(profileId),
+    [player.deleteProfile],
+  );
+  const handleUserAboutMeChange = useCallback(
+    (userAboutMe: string) =>
+      player.updateTimerSettings({
+        ...player.timerSettings,
+        userAboutMe,
+      }),
+    [player.timerSettings, player.updateTimerSettings],
+  );
+  const handleImport = useCallback(
+    () => void player.importTracks(),
+    [player.importTracks],
+  );
+  const handleAddLink = useCallback(
+    (url: string) => void player.addRemoteLink(url),
+    [player.addRemoteLink],
+  );
+  const handleDropFiles = useCallback(
+    (files: File[]) => void player.importDroppedFiles(files),
+    [player.importDroppedFiles],
+  );
+  const handleRemoteTime = useCallback(
+    (time: number) => player.onRemoteTime(time),
+    [player.onRemoteTime],
+  );
+  const handleRemoteDuration = useCallback(
+    (duration: number) => player.onRemoteDuration(duration),
+    [player.onRemoteDuration],
+  );
+  const handleRemotePlaying = useCallback(
+    (playing: boolean) => player.onRemotePlaying(playing),
+    [player.onRemotePlaying],
+  );
+  const handleRemoteEnded = useCallback(
+    () => player.onRemoteEnded(),
+    [player.onRemoteEnded],
+  );
+  const handleRemoteError = useCallback(
+    (message: string) => player.onRemoteError(message),
+    [player.onRemoteError],
+  );
+  const handleRefresh = useCallback(() => {
+    void player.refresh().catch((error: unknown) => {
       player.setError(error instanceof Error ? error.message : String(error));
-    }
-  };
+    });
+  }, [player.refresh, player.setError]);
+  const handleOpenFolder = useCallback(
+    () => void player.openMusicFolder(),
+    [player.openMusicFolder],
+  );
+  const handleSelectTrack = useCallback(
+    (trackId: string, autoplay?: boolean) =>
+      void player.selectTrack(trackId, autoplay),
+    [player.selectTrack],
+  );
+  const handleRemoveTrack = useCallback(
+    (track: Parameters<typeof player.removeTrack>[0]) =>
+      void player.removeTrack(track),
+    [player.removeTrack],
+  );
+  const handleSetFavoritesOnly = useCallback(
+    (enabled: boolean) => player.setFavoritesOnly(enabled),
+    [player.setFavoritesOnly],
+  );
+  const handleTogglePlay = useCallback(
+    () => void player.togglePlay(),
+    [player.togglePlay],
+  );
+  const handleNext = useCallback(
+    () => void player.playNext(),
+    [player.playNext],
+  );
+  const handlePrevious = useCallback(
+    () => void player.playPrevious(),
+    [player.playPrevious],
+  );
+  const handleSeek = useCallback(
+    (seconds: number) => player.seek(seconds),
+    [player.seek],
+  );
+  const handleVolume = useCallback(
+    (value: number) => player.setVolume(value),
+    [player.setVolume],
+  );
+  const handlePlaybackRateChange = useCallback(
+    (rate: number) => player.setPlaybackRate(rate),
+    [player.setPlaybackRate],
+  );
+  const handleToggleFavorite = useCallback(
+    (trackId: string) => player.toggleFavorite(trackId),
+    [player.toggleFavorite],
+  );
+  const handlePlayQueue = useCallback(
+    (queue: Parameters<typeof player.playQueue>[0], trackId: string | null) =>
+      player.playQueue(queue, trackId),
+    [player.playQueue],
+  );
+  const handleOpenTimerSettings = useCallback(
+    () => player.setTimerSettingsOpen(true),
+    [player.setTimerSettingsOpen],
+  );
+  const handleCloseTimerSettings = useCallback(
+    () => player.setTimerSettingsOpen(false),
+    [player.setTimerSettingsOpen],
+  );
+  const handleTimerSettingsChange = useCallback(
+    (settings: Parameters<typeof player.updateTimerSettings>[0]) =>
+      player.updateTimerSettings(settings),
+    [player.updateTimerSettings],
+  );
+  const handleClearError = useCallback(
+    () => player.setError(null),
+    [player.setError],
+  );
+  const handleToggleVolumeNormalization = useCallback(
+    () => player.toggleVolumeNormalization(),
+    [player.toggleVolumeNormalization],
+  );
 
   if (!player.ready) {
     return (
@@ -56,7 +195,6 @@ function App() {
       activeProfileId={player.activeProfileId}
       analyticsSummary={player.analyticsSummary}
       analyticsStore={player.analyticsStore}
-      profilePickerOpen={player.profilePickerOpen}
       favoriteTrackIds={player.favoriteTrackIds}
       favoritesOnly={player.favoritesOnly}
       currentTrackId={player.currentTrackId}
@@ -70,55 +208,46 @@ function App() {
       mode={player.mode}
       timerSettings={player.timerSettings}
       timerSettingsOpen={player.timerSettingsOpen}
-      libraryOpen={player.libraryOpen}
+      hubOpen={player.hubOpen}
       busy={player.busy}
       error={player.error}
       browserMode={player.browserMode}
       windowPinned={windowPinned}
-      onToggleLibrary={player.setLibraryOpen}
-      onToggleProfilePicker={player.setProfilePickerOpen}
-      onSelectProfile={(profileId) => void player.switchProfile(profileId)}
-      onCreateProfile={(name) => void player.createProfile(name)}
-      onDeleteProfile={(profileId) => void player.deleteProfile(profileId)}
-      onUserAboutMeChange={(userAboutMe) =>
-        player.updateTimerSettings({
-          ...player.timerSettings,
-          userAboutMe,
-        })
-      }
-      onImport={() => void player.importTracks()}
-      onAddLink={(url) => void player.addRemoteLink(url)}
-      onDropFiles={(files) => void player.importDroppedFiles(files)}
+      onOpenHub={player.openHub}
+      onCloseHub={handleCloseHub}
+      onSelectProfile={handleSelectProfile}
+      onCreateProfile={handleCreateProfile}
+      onDeleteProfile={handleDeleteProfile}
+      onUserAboutMeChange={handleUserAboutMeChange}
+      onImport={handleImport}
+      onAddLink={handleAddLink}
+      onDropFiles={handleDropFiles}
       remoteSeekRequest={player.remoteSeekRequest}
-      onRemoteTime={player.onRemoteTime}
-      onRemoteDuration={player.onRemoteDuration}
-      onRemotePlaying={player.onRemotePlaying}
-      onRemoteEnded={player.onRemoteEnded}
-      onRemoteError={player.onRemoteError}
-      onRefresh={() =>
-        void player.refresh().catch((error: unknown) => {
-          player.setError(error instanceof Error ? error.message : String(error));
-        })
-      }
-      onOpenFolder={() => void player.openMusicFolder()}
-      onSelectTrack={(trackId, autoplay) =>
-        void player.selectTrack(trackId, autoplay)
-      }
-      onRemoveTrack={(track) => void player.removeTrack(track)}
-      onSetFavoritesOnly={player.setFavoritesOnly}
-      onTogglePlay={() => void player.togglePlay()}
-      onNext={() => void player.playNext()}
-      onPrevious={() => void player.playPrevious()}
-      onSeek={player.seek}
-      onVolume={player.setVolume}
+      onRemoteTime={handleRemoteTime}
+      onRemoteDuration={handleRemoteDuration}
+      onRemotePlaying={handleRemotePlaying}
+      onRemoteEnded={handleRemoteEnded}
+      onRemoteError={handleRemoteError}
+      onRefresh={handleRefresh}
+      onOpenFolder={handleOpenFolder}
+      onSelectTrack={handleSelectTrack}
+      onRemoveTrack={handleRemoveTrack}
+      onSetFavoritesOnly={handleSetFavoritesOnly}
+      onTogglePlay={handleTogglePlay}
+      onNext={handleNext}
+      onPrevious={handlePrevious}
+      onSeek={handleSeek}
+      onVolume={handleVolume}
       playbackRate={player.playbackRate}
-      onPlaybackRateChange={player.setPlaybackRate}
-      onToggleFavorite={player.toggleFavorite}
-      onPlayQueue={player.playQueue}
-      onOpenTimerSettings={() => player.setTimerSettingsOpen(true)}
-      onCloseTimerSettings={() => player.setTimerSettingsOpen(false)}
-      onTimerSettingsChange={player.updateTimerSettings}
-      onClearError={() => player.setError(null)}
+      onPlaybackRateChange={handlePlaybackRateChange}
+      volumeNormalization={player.volumeNormalization}
+      onToggleVolumeNormalization={handleToggleVolumeNormalization}
+      onToggleFavorite={handleToggleFavorite}
+      onPlayQueue={handlePlayQueue}
+      onOpenTimerSettings={handleOpenTimerSettings}
+      onCloseTimerSettings={handleCloseTimerSettings}
+      onTimerSettingsChange={handleTimerSettingsChange}
+      onClearError={handleClearError}
       onSetWindowPinned={handleSetWindowPinned}
     />
   );

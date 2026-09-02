@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { memo, useEffect, useRef, useState, type ReactElement } from "react";
 import { PLAYBACK_RATES, type FocusMode } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
@@ -16,7 +16,9 @@ interface PlaybackControlsProps {
   onPlaybackRateChange?: (rate: number) => void;
 }
 
-export function PlaybackControls({
+// PERF: memo — re-renders only when playback state/progress actually changes,
+// not on every timer tick.
+export const PlaybackControls = memo(function PlaybackControls({
   isPlaying,
   progress,
   duration,
@@ -154,7 +156,7 @@ export function PlaybackControls({
       </div>
     </div>
   );
-}
+});
 
 function formatClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";

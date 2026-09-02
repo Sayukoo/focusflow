@@ -38,7 +38,8 @@ export type IconName =
   | "thumbs-down"
   | "trash"
   | "user"
-  | "volume";
+  | "volume"
+  | "zen";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -108,9 +109,9 @@ const icons: Record<IconName, ReactElement> = {
   ),
   library: (
     <>
-      <path d="M5.5 4.5v15" />
-      <path d="M9.7 4.5v15" />
-      <path d="m14.1 5 3.9-1v15l-3.9 1Z" />
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="2.6" />
+      <path d="M12 6.4a5.6 5.6 0 0 1 4.8 2.7" />
     </>
   ),
   "music-library": (
@@ -247,6 +248,7 @@ const icons: Record<IconName, ReactElement> = {
       <path d="M18.5 5.5a9 9 0 0 1 0 13" />
     </>
   ),
+  zen: <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />,
 };
 
 export function Icon({

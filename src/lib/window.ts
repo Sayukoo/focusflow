@@ -46,6 +46,12 @@ async function applyNativeWindowState(pinned: boolean): Promise<void> {
   const appWindow = getCurrentWindow();
 
   if (!pinned) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_window_pinned", { pinned: false });
+    } catch {
+      // Ignore if native command unavailable
+    }
     await appWindow.setAlwaysOnTop(false);
     await appWindow.setDecorations(true);
     await appWindow.setResizable(true);
@@ -59,6 +65,7 @@ async function applyNativeWindowState(pinned: boolean): Promise<void> {
     await appWindow.setPosition(
       new PhysicalPosition(restoreState.x, restoreState.y),
     );
+    await appWindow.setAlwaysOnTop(false);
     return;
   }
 
@@ -75,9 +82,8 @@ async function applyNativeWindowState(pinned: boolean): Promise<void> {
     });
   }
 
-  await appWindow.setAlwaysOnTop(true);
   await appWindow.setDecorations(false);
-  await appWindow.setResizable(true);
+  await appWindow.setResizable(false);
   await appWindow.setShadow(false);
   await appWindow.setSize(new LogicalSize(MINI_WINDOW_WIDTH, MINI_WINDOW_HEIGHT));
 
@@ -85,16 +91,24 @@ async function applyNativeWindowState(pinned: boolean): Promise<void> {
     currentMonitor(),
     appWindow.outerSize(),
   ]);
-  if (!monitor) return;
+  if (monitor) {
+    const margin = 0;
+    const x =
+      monitor.workArea.position.x +
+      monitor.workArea.size.width -
+      windowSize.width -
+      margin;
+    const y = monitor.workArea.position.y + margin;
+    await appWindow.setPosition(new PhysicalPosition(x, y));
+  }
 
-  const margin = 0;
-  const x =
-    monitor.workArea.position.x +
-    monitor.workArea.size.width -
-    windowSize.width -
-    margin;
-  const y = monitor.workArea.position.y + margin;
-  await appWindow.setPosition(new PhysicalPosition(x, y));
+  await appWindow.setAlwaysOnTop(true);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_window_pinned", { pinned: true });
+  } catch {
+    // Ignore if native command unavailable
+  }
 }
 
 function readRestoreWindowState(): RestorableWindowState | null {

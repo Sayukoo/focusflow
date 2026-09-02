@@ -9,6 +9,30 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* ── Motion token system ───────────────────────────────
+     Every animation in this stylesheet derives its easing
+     and duration from these tokens so the whole app shares
+     one physical "feel": fast attacks, soft landings.     */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring-soft: cubic-bezier(0.28, 1.35, 0.48, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-swift: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-gentle: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-in-back: cubic-bezier(0.36, 0, 0.66, -0.28);
+
+  --dur-instant: 90ms;
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-mid: 380ms;
+  --dur-slow: 560ms;
+  --dur-deliberate: 820ms;
+
+  /* Shared surface language for floating layers */
+  --lift-shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.22);
+  --lift-shadow-deep: 0 18px 44px rgba(0, 0, 0, 0.42);
 }
 
 * {
@@ -67,6 +91,31 @@ button {
   }
 }
 
+/* Boot screen: the orb breathes while a soft halo expands around it */
+.boot-orb::after {
+  content: "";
+  position: absolute;
+  inset: -0.9rem;
+  border-radius: 50%;
+  border: 1px solid rgba(242, 210, 180, 0.35);
+  opacity: 0;
+  animation: boot-halo 2.4s var(--ease-gentle) infinite;
+}
+
+@keyframes boot-halo {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  35% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
 .focus-shell {
   position: relative;
   width: 100%;
@@ -93,6 +142,43 @@ button {
   transition: background 420ms ease;
 }
 
+/* The idle atmosphere slowly orbits its warm/cool light sources so the
+   shell never feels like a static poster even without a thumbnail. */
+.focus-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 62% 34%, rgba(157, 214, 255, 0.07), transparent 42%),
+    radial-gradient(ellipse at 24% 78%, rgba(200, 140, 104, 0.08), transparent 46%);
+  mix-blend-mode: screen;
+  animation: atmosphere-orbit 34s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes atmosphere-orbit {
+  0% {
+    transform: translate3d(-2.5%, -1.5%, 0) scale(1.04) rotate(-1.2deg);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translate3d(1%, 1%, 0) scale(1.09) rotate(0.8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(2.5%, -2%, 0) scale(1.05) rotate(1.4deg);
+    opacity: 0.8;
+  }
+}
+
+.focus-shell.mode-energizing .focus-atmosphere::before {
+  background:
+    radial-gradient(ellipse at 70% 30%, rgba(229, 162, 63, 0.12), transparent 44%),
+    radial-gradient(ellipse at 22% 72%, rgba(180, 70, 45, 0.14), transparent 48%);
+  animation-duration: 22s;
+  animation-direction: alternate-reverse;
+}
+
 /* ─────────────────────────────────────────────────────────
    THUMBNAIL BACKGROUND  — animated, multi-layer blur backdrop
    ───────────────────────────────────────────────────────── */
@@ -106,19 +192,24 @@ button {
   pointer-events: none;
 }
 
-/* Crossfade layers */
+/* Crossfade layers — incoming layer also settles with a slow cinematic
+   push-in so track changes feel like a camera move, not a hard cut.
+   PERF: no permanent will-change here — the crossfade lasts ~1.4s and the
+   image children promote themselves; keeping a full-screen extra composite
+   layer alive forever costs Firefox memory on every frame. */
 .thumbnail-bg__layer {
   position: absolute;
   inset: 0;
-  will-change: opacity;
 }
 
 .thumbnail-bg__layer--in {
-  animation: tbg-fadein 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation:
+    tbg-fadein 1100ms var(--ease-smooth) forwards,
+    tbg-layer-settle 1400ms var(--ease-out-expo) forwards;
 }
 
 .thumbnail-bg__layer--out {
-  animation: tbg-fadeout 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: tbg-fadeout 1100ms var(--ease-smooth) forwards;
 }
 
 @keyframes tbg-fadein {
@@ -129,6 +220,11 @@ button {
 @keyframes tbg-fadeout {
   from { opacity: 1; }
   to   { opacity: 0; }
+}
+
+@keyframes tbg-layer-settle {
+  from { transform: scale(1.045); }
+  to   { transform: scale(1); }
 }
 
 /* Shared image layer base */
@@ -182,32 +278,67 @@ button {
   opacity: 0.84;
 }
 
-/* Drift animations — each layer moves on a different axis */
+/* Drift animations — each layer moves on a different axis with a
+   counter-rotating midpoint so the motion never reads as a loop. */
 @keyframes tbg-drift-far {
-  from { transform: scale(1.06) translate(0, 0) rotate(0deg); }
-  to   { transform: scale(1.12) translate(-2%, 1.5%) rotate(1.5deg); }
+  0% {
+    transform: scale(1.06) translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.1) translate3d(-1.4%, 2%, 0) rotate(-0.8deg);
+  }
+  100% {
+    transform: scale(1.13) translate3d(-2.4%, 1.2%, 0) rotate(1.6deg);
+  }
 }
 
 @keyframes tbg-drift-mid {
-  from { transform: scale(1.08) translate(0, 0) rotate(0deg); }
-  to   { transform: scale(1.14) translate(2.5%, -1%) rotate(-1deg); }
+  0% {
+    transform: scale(1.08) translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.12) translate3d(1.8%, -1.6%, 0) rotate(0.9deg);
+  }
+  100% {
+    transform: scale(1.15) translate3d(2.8%, 0.8%, 0) rotate(-1.2deg);
+  }
 }
 
 @keyframes tbg-drift-near {
-  from { transform: scale(1.10) translate(0, 0) rotate(0deg); }
-  to   { transform: scale(1.16) translate(1.5%, 2%) rotate(0.5deg); }
+  0% {
+    transform: scale(1.1) translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.13) translate3d(-1%, 1.4%, 0) rotate(-0.5deg);
+  }
+  100% {
+    transform: scale(1.17) translate3d(1.6%, 2.2%, 0) rotate(0.7deg);
+  }
 }
 
-/* Breathing — subtle scale pulse when idle */
+/* Breathing — subtle scale pulse when idle.
+   PERF: animates ONLY opacity. Animating `filter` forces Firefox to
+   re-rasterize the full-screen blurred layer every single frame; the opacity
+   pulse reads identically while the static blur stays cached as a texture. */
 @keyframes tbg-breathe {
-  0%, 100% { opacity: 0.38; }
-  50%       { opacity: 0.46; }
+  0%,
+  100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 0.47;
+  }
 }
 
 /* Breathing — stronger when playing */
 @keyframes tbg-breathe-playing {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 0.64; }
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.66;
+  }
 }
 
 .thumbnail-bg__palette {
@@ -242,8 +373,53 @@ button {
 }
 
 @keyframes tbg-palette-drift {
-  from { transform: scale(1.02) translate3d(-1%, 0, 0); }
-  to   { transform: scale(1.08) translate3d(2%, 1.5%, 0); }
+  0% {
+    transform: scale(1.02) translate3d(-1%, 0, 0) rotate(0deg);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(1.06) translate3d(0.5%, 1%, 0) rotate(-0.6deg);
+    opacity: 0.27;
+  }
+  100% {
+    transform: scale(1.09) translate3d(2%, 1.5%, 0) rotate(0.9deg);
+    opacity: 0.24;
+  }
+}
+
+/* A faint aurora ribbon sweeps across the palette layer while playing,
+   giving the backdrop a living light source tied to the track colors. */
+.thumbnail-bg.is-playing .thumbnail-bg__palette::after {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background: linear-gradient(
+    115deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.05) 46%,
+    rgba(255, 255, 255, 0.11) 50%,
+    rgba(255, 255, 255, 0.05) 54%,
+    transparent 68%
+  );
+  mix-blend-mode: overlay;
+  animation: tbg-aurora-sweep 13s var(--ease-gentle) infinite;
+}
+
+@keyframes tbg-aurora-sweep {
+  0% {
+    transform: translate3d(-38%, -12%, 0) rotate(4deg);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(38%, 14%, 0) rotate(-3deg);
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -323,6 +499,17 @@ button {
     );
   pointer-events: none;
   z-index: 1;
+}
+
+/* The vignette gently tightens while playing — a subconscious focus cue. */
+.focus-shell.is-playing-vignette .focus-vignette,
+.thumbnail-bg.is-playing ~ .focus-vignette {
+  animation: vignette-focus 9s ease-in-out infinite alternate;
+}
+
+@keyframes vignette-focus {
+  from { opacity: 0.86; }
+  to   { opacity: 1; }
 }
 
 .youtube-player-host {
@@ -588,9 +775,12 @@ button {
     opacity: 0.9;
     transform: scale(0.55);
   }
+  70% {
+    opacity: 0.35;
+  }
   100% {
     opacity: 0;
-    transform: scale(1.6);
+    transform: scale(1.75);
   }
 }
 
@@ -602,9 +792,46 @@ button {
   22% {
     opacity: 1;
   }
+  60% {
+    opacity: 0.7;
+    transform: scale(0.95) rotate(6deg);
+  }
   100% {
     opacity: 0;
-    transform: scale(1.2) rotate(16deg);
+    transform: scale(1.28) rotate(18deg);
+  }
+}
+
+/* A second, softer echo ring follows the main burst for depth. */
+.favorite-control.is-bursting::marker {
+  content: "";
+}
+
+.favorite-control.is-favorite::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -0.2rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 113, 136, 0.22), transparent 68%);
+  opacity: 0;
+  transition: opacity var(--dur-mid) var(--ease-gentle);
+}
+
+.favorite-control.is-favorite:hover::before {
+  opacity: 1;
+  animation: favorite-glow-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes favorite-glow-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
   }
 }
 
@@ -751,7 +978,7 @@ button {
   opacity: 0.4;
   cursor: not-allowed;
 }
-*** End of File
+
 .profile-popover-header {
   display: flex;
   align-items: center;
@@ -907,6 +1134,24 @@ button {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* Mode dot inside the profile pill breathes so the active mode is
+   perceivable peripherally, without reading any text. */
+.mode-dot {
+  animation: mode-dot-breathe 4.5s ease-in-out infinite;
+}
+
+@keyframes mode-dot-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0.35rem rgba(236, 143, 112, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0.85rem rgba(236, 143, 112, 0.55);
+    transform: scale(1.08);
   }
 }
 
@@ -1081,13 +1326,52 @@ button {
   cursor: default;
   user-select: none;
   text-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  transition: text-shadow var(--dur-slow) var(--ease-gentle);
+}
+
+/* The countdown breathes with a soft luminous halo — the heartbeat of the app. */
+.timer-display::before {
+  content: "";
+  position: absolute;
+  inset: -18% -12%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(157, 214, 255, 0.09),
+    transparent 62%
+  );
+  opacity: 0;
+  animation: timer-halo 7s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes timer-halo {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+/* Final-minute urgency: the halo warms up and pulses faster. */
+.focus-shell.is-timer-final-minute .timer-display::before {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 170, 120, 0.14),
+    transparent 62%
+  );
+  animation-duration: 2.4s;
 }
 
 .quick-pomodoro-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  margin-bottom: 0.5rem;
   padding: 0.32rem 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
@@ -1136,18 +1420,34 @@ button {
   background: var(--confetti-color);
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.25);
-  animation: timer-confetti-fly 2s cubic-bezier(0.18, 0.78, 0.28, 1)
+  animation: timer-confetti-fly 2.2s cubic-bezier(0.18, 0.78, 0.28, 1)
     var(--confetti-delay, 0ms) forwards;
 }
 
 @keyframes timer-confetti-fly {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.25) rotate(0deg);
+    transform:
+      translate(-50%, -50%)
+      scale(0.25)
+      rotate(0deg);
   }
-  12% {
+  10% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(20deg);
+    transform:
+      translate(calc(-50% + var(--confetti-x) * 0.08), calc(-50% + var(--confetti-y) * 0.06))
+      scale(1.1)
+      rotate(14deg);
+  }
+  55% {
+    opacity: 1;
+    transform:
+      translate(
+        calc(-50% + var(--confetti-x) * 0.72),
+        calc(-50% + var(--confetti-y) * 0.6)
+      )
+      rotate(calc(var(--confetti-rotation) * 0.55))
+      scale(1);
   }
   100% {
     opacity: 0;
@@ -1157,7 +1457,7 @@ button {
         calc(-50% + var(--confetti-y))
       )
       rotate(var(--confetti-rotation))
-      scale(1);
+      scale(0.82);
   }
 }
 
@@ -1228,11 +1528,36 @@ button {
 @keyframes goal-fade-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px) scale(0.985);
+    filter: blur(3px);
+  }
+  60% {
+    filter: blur(0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* The main-goal textarea gets a slow aurora border while focused —
+   a calm signal that "this is where your intention lives". */
+.timer-goal-input:focus {
+  animation: goal-focus-aurora 5s ease-in-out infinite;
+}
+
+@keyframes goal-focus-aurora {
+  0%,
+  100% {
+    box-shadow:
+      0 0 16px rgba(166, 216, 255, 0.15),
+      inset 0 0 0 1px rgba(166, 216, 255, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 26px rgba(166, 216, 255, 0.24),
+      inset 0 0 0 1px rgba(166, 216, 255, 0.14);
   }
 }
 
@@ -1416,6 +1741,35 @@ button {
   background-position: center;
   background-size: cover;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition:
+    transform var(--dur-mid) var(--ease-spring),
+    box-shadow var(--dur-mid) var(--ease-smooth);
+}
+
+.cover:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+}
+
+.cover:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* The cover gently floats while music plays — a vinyl-like life. */
+.cover.is-cover-playing {
+  animation: cover-float 5.4s ease-in-out infinite;
+}
+
+@keyframes cover-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    transform: translateY(-3px) rotate(0.6deg);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
+  }
 }
 
 .cover-glow {
@@ -1623,11 +1977,42 @@ button {
 @keyframes speed-popover-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 6px) scale(0.95);
+    transform: translate(-50%, 10px) scale(0.92);
+    filter: blur(4px);
+  }
+  60% {
+    filter: blur(0);
   }
   to {
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.speed-option {
+  position: relative;
+}
+
+/* Selected option keeps a slow luminous pulse so the eye finds it instantly. */
+.speed-option.is-selected::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  animation: selected-ring-pulse 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes selected-ring-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.8;
   }
 }
 
@@ -1716,15 +2101,35 @@ button {
   place-items: center;
   box-shadow: none;
   transition:
-    transform 180ms ease,
-    background 180ms ease,
-    color 180ms ease;
+    transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-smooth),
+    color var(--dur-base) var(--ease-smooth),
+    box-shadow var(--dur-mid) var(--ease-smooth);
 }
 
 .play-btn:hover {
   background: #fff;
   color: #0b0e18;
   transform: translateY(-1px) scale(1.025);
+}
+
+/* While music plays the button emits a slow heartbeat ring —
+   visible proof that sound is flowing without any text label. */
+.play-btn.is-playing {
+  animation: play-heartbeat 3.2s ease-in-out infinite;
+}
+
+@keyframes play-heartbeat {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+  45% {
+    box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.07);
+  }
+  60% {
+    box-shadow: 0 0 0 9px rgba(255, 255, 255, 0.04);
+  }
 }
 
 .transport-side-btn:active,
@@ -1775,11 +2180,12 @@ button {
   );
   outline: none;
   cursor: pointer;
-  transition: height 180ms ease, background 180ms ease;
+  transition: height var(--dur-base) var(--ease-smooth), background var(--dur-base) var(--ease-smooth), box-shadow var(--dur-base) var(--ease-smooth);
 }
 
 .seek:hover {
   height: 0.38rem;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.12);
 }
 
 .seek::-webkit-slider-thumb {
@@ -2111,7 +2517,10 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
-  transition: background 160ms ease;
+  transition:
+    background var(--dur-base) var(--ease-smooth),
+    border-color var(--dur-base) var(--ease-smooth),
+    box-shadow var(--dur-base) var(--ease-smooth);
 }
 
 .switch-visual span {
@@ -2120,7 +2529,9 @@ button {
   border-radius: 50%;
   background: #fff;
   transform: translateX(0.97rem);
-  transition: transform 160ms ease;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-smooth);
 }
 
 .timer-toggle-row input:not(:checked) + .switch-visual {
@@ -2131,32 +2542,13 @@ button {
   transform: translateX(0);
 }
 
-.app-lock-popover-wrap {
-  position: relative;
-  display: inline-flex;
+.timer-toggle-row input:checked + .switch-visual {
+  background: rgba(157, 214, 255, 0.32);
+  box-shadow: 0 0 12px rgba(157, 214, 255, 0.22);
 }
 
-.app-lock-btn {
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.app-lock-popover {
-  position: absolute;
-  top: calc(100% + 0.6rem);
-  right: 0;
-  z-index: 40;
-  width: 19rem;
-  max-width: calc(100vw - 2rem);
-  padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 1rem;
-  background:
-    linear-gradient(145deg, rgba(22, 37, 43, 0.98), rgba(11, 19, 26, 0.98)),
-    rgba(17, 28, 34, 0.97);
-  box-shadow:
-    0 1rem 2.6rem rgba(0, 0, 0, 0.45),
-    inset 0 1px rgba(255, 255, 255, 0.1);
+.timer-toggle-row input:checked + .switch-visual span {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
 }
 
 .app-lock-section {
@@ -2778,6 +3170,33 @@ button {
   to { transform: rotate(360deg); }
 }
 
+/* While the AI decomposes a goal, a soft thinking-glow orbits the button. */
+.mini-goal-ai-btn.is-loading {
+  position: relative;
+}
+
+.mini-goal-ai-btn.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  border-top-color: rgba(166, 216, 255, 0.85);
+  animation:
+    mini-goal-ai-spin 0.9s linear infinite,
+    ai-thinking-glow 1.8s ease-in-out infinite;
+}
+
+@keyframes ai-thinking-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(166, 216, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(166, 216, 255, 0.45);
+  }
+}
+
 .mini-subgoal-delete-btn {
   display: grid;
   place-items: center;
@@ -2839,10 +3258,10 @@ button {
   background: rgba(0, 0, 0, 0.16);
   cursor: pointer;
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    background var(--dur-base) var(--ease-spring),
+    border-color var(--dur-base) var(--ease-smooth),
+    box-shadow var(--dur-base) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-spring);
 }
 
 .mini-goal-check::after {
@@ -2853,18 +3272,35 @@ button {
   content: "";
   opacity: 0;
   transform: translateY(-0.04rem) rotate(40deg) scale(0.7);
-  transition: opacity 140ms ease, transform 160ms ease;
+  transition:
+    opacity var(--dur-fast) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-spring);
 }
 
 .mini-goal-check:checked {
   border-color: rgba(219, 243, 255, 0.9);
   background: rgba(219, 243, 255, 0.9);
   box-shadow: 0 0 0 3px rgba(166, 216, 255, 0.1);
+  animation: check-pop 320ms var(--ease-spring);
 }
 
 .mini-goal-check:checked::after {
   opacity: 1;
   transform: translateY(-0.04rem) rotate(40deg) scale(1);
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.82);
+  }
+  55% {
+    transform: scale(1.14);
+    box-shadow: 0 0 0 5px rgba(166, 216, 255, 0.16);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 3px rgba(166, 216, 255, 0.1);
+  }
 }
 
 .mini-goal-check:hover {
@@ -3016,6 +3452,12 @@ button {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
+  animation: library-backdrop-in var(--dur-mid) var(--ease-smooth) both;
+}
+
+@keyframes library-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .library-panel {
@@ -3028,6 +3470,23 @@ button {
   flex-direction: column;
   padding: 0.8rem;
   gap: 0.6rem;
+  animation: library-panel-in var(--dur-slow) var(--ease-out-expo) both;
+}
+
+@keyframes library-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(3.5rem);
+    filter: blur(6px);
+  }
+  55% {
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
 }
 
 .library-header {
@@ -3085,7 +3544,11 @@ button {
     radial-gradient(circle at 50% 0%, rgba(80, 141, 205, 0.14), transparent 58%),
     rgba(255, 255, 255, 0.035);
   color: rgba(255, 255, 255, 0.78);
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  transition:
+    border-color var(--dur-base) var(--ease-smooth),
+    background var(--dur-base) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-smooth);
 }
 
 .library-dropzone.is-dragging {
@@ -3094,6 +3557,17 @@ button {
     radial-gradient(circle at 50% 0%, rgba(80, 176, 255, 0.28), transparent 58%),
     rgba(80, 142, 205, 0.12);
   transform: scale(1.01);
+  box-shadow: 0 0 24px rgba(80, 176, 255, 0.22);
+}
+
+/* The dashed border slowly marches while files hover over the dropzone —
+   an unmistakable "drop here" signal without a single word. */
+.library-dropzone.is-dragging {
+  animation: dropzone-march 1.2s linear infinite;
+}
+
+@keyframes dropzone-march {
+  to { background-position: 1.6rem 0, 0 0; }
 }
 
 .dropzone-icon {
@@ -3401,9 +3875,8 @@ button {
 .library-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.38rem;
+  gap: 0.45rem;
   min-height: 0;
-  overflow: auto;
   padding: 0.05rem 0.1rem 0.5rem;
 }
 
@@ -3411,10 +3884,18 @@ button {
   position: relative;
   min-width: 0;
   overflow: hidden;
+  /* Skip layout/paint for cards scrolled far out of view — large libraries
+     stay smooth without virtualization. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4.4rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.65rem;
   background: rgba(255, 255, 255, 0.045);
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  transition:
+    border-color var(--dur-base) var(--ease-smooth),
+    background var(--dur-base) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-smooth);
 }
 
 .track-card:hover,
@@ -3422,6 +3903,24 @@ button {
   border-color: rgba(136, 202, 255, 0.48);
   background: rgba(101, 166, 222, 0.12);
   transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+/* Cards cascade in with a soft stagger when the library opens. */
+.library-grid .track-card {
+  animation: track-card-in var(--dur-slow) var(--ease-out-expo) both;
+  animation-delay: calc(var(--card-index, 0) * 45ms);
+}
+
+@keyframes track-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .track-card.is-expanded {
@@ -3434,11 +3933,11 @@ button {
   display: grid;
   grid-template-columns: 3rem minmax(0, 1fr) minmax(4.8rem, 0.72fr);
   grid-template-rows: 1fr;
-  column-gap: 0.55rem;
+  column-gap: 0.6rem;
   align-items: center;
   width: 100%;
-  min-height: 3.5rem;
-  padding: 0.25rem 2.35rem 0.25rem 0.3rem;
+  min-height: 3.8rem;
+  padding: 0.3rem 2.35rem 0.3rem 0.3rem;
   text-align: left;
 }
 
@@ -3561,7 +4060,7 @@ button {
   grid-row: 1;
   min-width: 0;
   margin-top: 0;
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 600;
 }
 
@@ -3571,9 +4070,9 @@ button {
   min-width: 0;
   margin-top: 0;
   padding-right: 0.25rem;
-  color: rgba(255, 255, 255, 0.42);
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
 }
 
 .track-card-delete {
@@ -4403,25 +4902,44 @@ button {
 }
 
 .focus-shell.is-window-pinned {
-  border-radius: 1rem;
+  border-radius: 1.25rem;
   background: transparent;
-  filter: drop-shadow(0 1rem 2.6rem rgba(0, 0, 0, 0.28));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  clip-path: inset(0 round 1.25rem);
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(white, black);
+}
+
+.focus-shell.is-window-pinned .focus-atmosphere,
+.focus-shell.is-window-pinned .thumbnail-bg,
+.focus-shell.is-window-pinned .focus-vignette,
+.focus-shell.is-window-pinned .thumbnail-bg__layer,
+.focus-shell.is-window-pinned .thumbnail-bg__palette,
+.focus-shell.is-window-pinned .thumbnail-bg__overlay {
+  border-radius: inherit;
+  clip-path: inherit;
+  overflow: hidden;
 }
 
 .focus-shell.is-window-pinned .focus-atmosphere {
-  inset: -24%;
+  inset: 0;
   background:
     radial-gradient(
       ellipse at 32% 22%,
       rgba(112, 70, 48, 0.62),
-      transparent 45%
+      transparent 55%
     ),
     radial-gradient(
       ellipse at 74% 72%,
       rgba(34, 61, 108, 0.58),
-      transparent 52%
-    );
-  opacity: 0.78;
+      transparent 58%
+    ),
+    linear-gradient(145deg, #1a1412 0%, #0d121c 50%, #16110f 100%);
+  opacity: 0.92;
 }
 
 .focus-shell.is-window-pinned .focus-vignette {
@@ -4432,12 +4950,6 @@ button {
   );
 }
 
-.focus-shell.is-window-pinned {
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-}
 
 .focus-shell.is-window-pinned .focus-top {
   padding: 0.55rem 0.65rem 0.2rem;
@@ -4495,13 +5007,14 @@ button {
   gap: 0.35rem;
 }
 
-.focus-shell.is-window-pinned .focus-top-right > :not(.window-pin-control):not(.volume-pin-control):not(.menu-pin-control) {
+.focus-shell.is-window-pinned .focus-top-right > :not(.window-pin-control):not(.volume-pin-control):not(.menu-pin-control):not(.quick-pomodoro-control) {
   display: none !important;
 }
 
 .focus-shell.is-window-pinned .window-pin-control,
 .focus-shell.is-window-pinned .volume-pin-control,
-.focus-shell.is-window-pinned .menu-pin-control {
+.focus-shell.is-window-pinned .menu-pin-control,
+.focus-shell.is-window-pinned .quick-pomodoro-control {
   display: inline-flex !important;
 }
 
@@ -4656,14 +5169,16 @@ button {
 }
 
 .window-pin-btn,
-.music-library-btn {
+.hub-open-btn,
+.timer-header-btn {
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 
 .window-pin-btn:hover,
-.music-library-btn:hover {
+.hub-open-btn:hover,
+.timer-header-btn:hover {
   border-color: transparent;
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
@@ -4685,8 +5200,12 @@ button {
   box-shadow: none !important;
 }
 
-.music-library-btn .icon-music-library {
+.hub-open-btn .icon-library {
   color: #c9f2f5;
+}
+
+.timer-header-btn .icon-stopwatch {
+  color: #d8b4fe;
 }
 
 .focus-shell.is-window-pinned .timer-display {
@@ -4756,7 +5275,6 @@ button {
 }
 
 .focus-shell.is-window-pinned .quick-pomodoro-btn {
-  margin-bottom: 0.3rem;
   padding: 0.24rem 0.6rem;
   font-size: 0.62rem;
 }
@@ -5282,6 +5800,19 @@ button {
 }
 
 /* Informacje o mnie (AI Context) */
+.library-about-me-section {
+  margin-top: 0.6rem;
+  padding: 1rem;
+  border-top: none;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+}
+
+.library-about-me-section .profile-about-me-wrap textarea {
+  min-height: 9rem;
+}
+
 .profile-about-me-section {
   display: flex;
   flex-direction: column;
@@ -5783,6 +6314,366 @@ button {
   box-shadow: 0 0 8px rgba(192, 132, 252, 0.3);
 }
 
+/* ==========================================================================
+   UNIFIED HUB PANEL (music library + account & profiles + timer shortcut)
+   Reuses .library-overlay / .library-panel / .library-manager for the drawer
+   chrome; everything below styles only the hub-specific header and tabs.
+   ========================================================================== */
+
+/* The hub panel is a touch wider than the plain library drawer so the
+   playlist rows and the profile section both stay comfortably readable. */
+.library-panel.hub-panel {
+  width: min(38rem, 96vw);
+}
+
+.hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.hub-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.7rem;
+}
+
+.hub-glyph {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, rgba(74, 158, 220, 0.35), rgba(119, 72, 190, 0.4));
+  color: rgba(218, 241, 255, 0.95);
+}
+
+.hub-brand-copy {
+  min-width: 0;
+}
+
+.hub-title {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.hub-subtitle {
+  display: block;
+  margin-top: 0.12rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+/* Mode Switcher (Focus / Energizing) in Hub Header */
+.hub-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.18rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.hub-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.85rem;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    background var(--dur-base) var(--ease-smooth),
+    border-color var(--dur-base) var(--ease-smooth),
+    color var(--dur-base) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-smooth);
+}
+
+.hub-mode-btn:hover:not(.is-active) {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hub-mode-btn:active {
+  transform: scale(0.97);
+}
+
+/* Active Focus Mode: Deep purple/violet glow */
+.hub-mode-btn--focus.is-active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(88, 60, 196, 0.45));
+  border-color: rgba(192, 132, 252, 0.5);
+  color: #f3e8ff;
+  box-shadow: 0 0 14px rgba(147, 112, 250, 0.3);
+}
+
+/* Active Energizing Mode: Warm orange/amber flame glow */
+.hub-mode-btn--energizing.is-active {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.35), rgba(220, 38, 38, 0.45));
+  border-color: rgba(251, 146, 60, 0.55);
+  color: #ffedd5;
+  box-shadow: 0 0 14px rgba(249, 115, 22, 0.35);
+}
+
+.hub-mode-btn .icon-svg {
+  flex-shrink: 0;
+}
+
+.hub-close-btn,
+.hub-folder-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hub-close-btn:hover,
+.hub-folder-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* One continuous scrollable body — music library on top, account & profiles
+   below. A single scrollbar, no tab switching, and nothing ever gets
+   squeezed into a thin strip. */
+.hub-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.65rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.hub-body::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.hub-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hub-section {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 0.6rem;
+}
+
+/* BUGFIX: the body scrolls, so its children must never compress. Without
+   this, flexbox squashed the track cards into flat slivers to fit the
+   viewport instead of overflowing — no scrollbar, invisible tracks. */
+.hub-body > * {
+  flex-shrink: 0;
+}
+
+.hub-section--stats {
+  gap: 0.45rem;
+}
+
+.hub-stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.hub-stats-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.hub-stats-title .icon-svg {
+  color: rgba(157, 214, 255, 0.85);
+}
+
+.hub-stats-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+}
+
+.hub-stats-total {
+  color: rgba(190, 228, 255, 0.92);
+  font-weight: 600;
+}
+
+.hub-stats-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  margin-left: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+
+.hub-stats-streak.is-active {
+  background: rgba(255, 138, 76, 0.16);
+  color: #ffb38a;
+}
+
+/* Slightly shorter bars than the mobile variant — the hub already scrolls. */
+.hub-analytics-chart {
+  padding: 0.55rem 0.65rem 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Loudness normalization toggle in the footer stats strip. */
+.norm-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.norm-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.norm-toggle.is-active {
+  border-color: rgba(157, 214, 255, 0.55);
+  background: rgba(101, 166, 222, 0.18);
+  color: #bde6ff;
+  box-shadow: 0 0 14px rgba(120, 205, 255, 0.22);
+}
+
+/* Offline notice for remote embeds (YouTube/Spotify/... need the network). */
+.remote-offline-badge {
+  position: fixed;
+  left: 50%;
+  bottom: 4.6rem;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.45rem 0.8rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 193, 130, 0.4);
+  border-radius: 999px;
+  background: rgba(28, 20, 10, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: #ffd9a8;
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.hub-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hub-section-heading::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.14),
+    transparent
+  );
+}
+
+/* Embedded profile section: strip the floating popover chrome. */
+.profile-popover.is-embedded {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+  overflow: visible;
+}
+
+@media (max-width: 700px) {
+  .profile-popover.is-embedded {
+    width: auto;
+  }
+
+  .hub-mode-btn {
+    padding: 0 0.5rem;
+  }
+  .hub-mode-btn span {
+    font-size: 0.7rem;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────
    PINNED MODE MODALS & OVERLAYS (Account & Profiles, Deep Work, Music Library)
    ───────────────────────────────────────────────────────── */
@@ -5969,3 +6860,156 @@ button {
   padding: 0.2rem 2rem 0.2rem 0.3rem !important;
   min-height: 3rem !important;
 }
+
+/* 4. Unified Hub panel in Pinned Mode */
+.focus-shell.is-window-pinned .library-panel.hub-panel {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0.6rem 0.7rem !important;
+  gap: 0.5rem !important;
+  border-radius: 0.85rem !important;
+}
+
+.focus-shell.is-window-pinned .hub-title {
+  font-size: 0.88rem !important;
+}
+
+.focus-shell.is-window-pinned .hub-subtitle {
+  font-size: 0.62rem !important;
+}
+
+.focus-shell.is-window-pinned .hub-mode-btn {
+  height: 1.7rem !important;
+  font-size: 0.7rem !important;
+  padding: 0 0.55rem !important;
+}
+
+/* The embedded profile section must never inherit the floating popover
+   pinned overrides — it lives inside the hub drawer. */
+.focus-shell.is-window-pinned .profile-popover.is-embedded {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  height: auto !important;
+  max-height: none !important;
+  z-index: auto !important;
+  padding: 0 !important;
+  gap: 0.55rem !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+  overflow: visible !important;
+}
+
+
+/* ============================================================
+   ZEN MODE & UI AUTO-DIM
+   Zen ('timer only'): one click hides mini-goals, track meta and
+   the stats badge — the timer and goal stay.
+   Auto-dim: after 10s without input everything except the timer
+   and the goal fades to 10%; any input brings it right back.
+   ============================================================ */
+
+.focus-top,
+.focus-bottom,
+.focus-mini-goals {
+  transition: opacity 1100ms var(--ease-gentle);
+}
+
+.focus-shell.is-ui-idle .focus-top,
+.focus-shell.is-ui-idle .focus-bottom,
+.focus-shell.is-ui-idle .focus-mini-goals {
+  opacity: 0.1;
+}
+
+/* Presentation feel: the cursor disappears together with the chrome. */
+.focus-shell.is-ui-idle {
+  cursor: none;
+}
+
+.focus-shell.is-zen .now-playing,
+.focus-shell.is-zen .focus-mini-goals,
+.focus-shell.is-zen .focus-stats-badge {
+  display: none;
+}
+
+.zen-toggle-btn.is-active {
+  border: 0 !important;
+  background: rgba(111, 180, 255, 0.18) !important;
+  color: #a9ddff !important;
+  box-shadow: none !important;
+}
+
+.zen-toggle-btn.is-active:hover {
+  background: rgba(111, 180, 255, 0.28) !important;
+  color: #ffffff !important;
+}
+
+/* --- One-line focus stats (top-left corner) --- */
+.focus-stats-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  user-select: none;
+}
+
+.focus-stats-badge-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
+.focus-stats-flame {
+  display: inline-flex;
+  color: rgba(255, 255, 255, 0.32);
+  transition: color 300ms ease, filter 300ms ease;
+}
+
+.focus-stats-flame.is-active {
+  color: #ff9d5c;
+  filter: drop-shadow(0 0 6px rgba(255, 140, 70, 0.45));
+}
+
+.focus-stats-sep {
+  opacity: 0.4;
+}
+
+.focus-stats-today {
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-stats-goal-track {
+  width: 7.5rem;
+  max-width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.focus-stats-goal-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(157, 214, 255, 0.7),
+    rgba(157, 214, 255, 0.95)
+  );
+  transition: width 600ms var(--ease-gentle);
+}
+
+.focus-stats-goal-fill.is-completed {
+  background: linear-gradient(90deg, #ffd27a, #ffb054);
+}
+
