@@ -39,6 +39,7 @@ interface TimerSettingsProps {
    * 25/5 quick-start button) already decided those and only the goal is
    * left to fill in. */
   compact?: boolean;
+  initialFocus?: "goal" | "subtask";
   onClose: () => void;
   onChange: (settings: TimerSettingsState) => void;
 }
@@ -57,6 +58,7 @@ export const TimerSettings = memo(function TimerSettings({
   open,
   settings: activeSettings,
   compact = false,
+  initialFocus,
   onClose,
   onChange,
 }: TimerSettingsProps) {
@@ -131,11 +133,24 @@ export const TimerSettings = memo(function TimerSettings({
     previousFocusRef.current =
       activeElement instanceof HTMLElement ? activeElement : null;
     const focusTimer = window.setTimeout(() => {
-      closeButtonRef.current?.focus({ preventScroll: true });
-    }, 0);
+      if (initialFocus === "goal") {
+        goalInputRef.current?.focus({ preventScroll: true });
+      } else if (initialFocus === "subtask") {
+        const subtaskInput = dialogRef.current?.querySelector<HTMLInputElement>(
+          ".mini-goal-add-input",
+        );
+        if (subtaskInput) {
+          subtaskInput.focus({ preventScroll: true });
+        } else {
+          goalInputRef.current?.focus({ preventScroll: true });
+        }
+      } else {
+        closeButtonRef.current?.focus({ preventScroll: true });
+      }
+    }, 50);
 
     return () => window.clearTimeout(focusTimer);
-  }, [open]);
+  }, [open, initialFocus]);
 
   const restoreFocus = () => {
     const previousFocus = previousFocusRef.current;

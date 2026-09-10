@@ -46,7 +46,7 @@ export function useAudioLibrary() {
     favoriteTrackIds,
     favoriteTrackIdsRef,
     commitProfileStore,
-    selectProfile,
+    selectProfile: rawSelectProfile,
     createProfile,
     deleteProfile,
     toggleFavorite,
@@ -729,6 +729,29 @@ export function useAudioLibrary() {
     [lastAnnouncedPhaseRef, setTimerSettings, timerSettingsRef],
   );
 
+  const switchProfile = useCallback(
+    async (profileId: string) => {
+      rawSelectProfile(profileId);
+      const activeProfile = profileStoreRef.current.profiles.find(
+        (profile) => profile.id === profileId,
+      );
+      engine.setMode(activeProfile?.theme ?? "deep");
+
+      const listed = await library.switchActiveProfile(profileId);
+
+      // Check if current track belongs to the new profile
+      const isCurrentInNewProfile = listed.some(
+        (t) => t.id === engine.currentIdRef.current,
+      );
+
+      if (!isCurrentInNewProfile && listed.length > 0) {
+        const nextTrack = listed[0];
+        await engine.loadTrack(nextTrack, engine.playingRef.current, "manual");
+      }
+    },
+    [engine, library, profileStoreRef, rawSelectProfile],
+  );
+
   return {
     tracks: library.tracks,
     musicDir: library.musicDir,
@@ -758,7 +781,7 @@ export function useAudioLibrary() {
     browserMode: !runningInTauri,
     setHubOpen,
     openHub,
-    switchProfile: selectProfile,
+    switchProfile,
     createProfile,
     deleteProfile,
     setError: library.setError,

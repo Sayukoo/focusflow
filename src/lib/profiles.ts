@@ -85,6 +85,26 @@ export function reconcileProfileTracks(
       : null;
   };
 
+  // Enforce explicit profile assignments and purge cross-contamination
+  for (const [trackId, targetProfileId] of Object.entries(defaultProfileByTrackId)) {
+    if (!next.profiles.some((p) => p.id === targetProfileId)) continue;
+    if (!knownIds.includes(trackId)) continue;
+
+    next.trackIdsByProfile[targetProfileId] = unique([
+      ...(next.trackIdsByProfile[targetProfileId] ?? []),
+      trackId,
+    ]);
+
+    // Ensure it is removed from the opposite profile so phonk/chill never leak
+    const conflictingProfileId =
+      targetProfileId === "deep-work" ? "energizing" : "deep-work";
+    if (next.trackIdsByProfile[conflictingProfileId]) {
+      next.trackIdsByProfile[conflictingProfileId] = (
+        next.trackIdsByProfile[conflictingProfileId] ?? []
+      ).filter((id) => id !== trackId);
+    }
+  }
+
   if (!next.migrationComplete) {
     const alreadyAssigned = new Set(
       Object.values(next.trackIdsByProfile).flatMap((ids) => ids),

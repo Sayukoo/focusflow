@@ -92,7 +92,7 @@ interface FocusPlayerProps {
   onRemoteEnded: () => void;
   onRemoteError: (message: string) => void;
   remoteSeekRequest: { value: number; token: number } | null;
-  onOpenTimerSettings: () => void;
+  onOpenTimerSettings: (focus?: "goal" | "subtask") => void;
   onCloseTimerSettings: () => void;
   onTimerSettingsChange?: (settings: TimerSettings) => void;
   onChangeTimerSettings?: (settings: TimerSettings) => void;
@@ -357,13 +357,10 @@ export function FocusPlayer({
     [],
   );
 
-  const [draftGoal, setDraftGoal] = useState(timerSettings.goal);
-  const goalInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [timerSettingsCompact, setTimerSettingsCompact] = useState(false);
-
-  useEffect(() => {
-    setDraftGoal(timerSettings.goal);
-  }, [timerSettings.goal]);
+  const [timerSettingsFocus, setTimerSettingsFocus] = useState<
+    "goal" | "subtask"
+  >("goal");
 
   const handleQuickPomodoro = useCallback(() => {
     const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
@@ -375,7 +372,8 @@ export function FocusPlayer({
       breakDurationMinutes: 5,
     });
     setTimerSettingsCompact(true);
-    onOpenTimerSettings();
+    setTimerSettingsFocus("goal");
+    onOpenTimerSettings("goal");
   }, [
     onChangeTimerSettings,
     onOpenTimerSettings,
@@ -383,10 +381,14 @@ export function FocusPlayer({
     timerSettings,
   ]);
 
-  const openFullTimerSettings = useCallback(() => {
-    setTimerSettingsCompact(false);
-    onOpenTimerSettings();
-  }, [onOpenTimerSettings]);
+  const openFullTimerSettings = useCallback(
+    (focus: "goal" | "subtask" = "goal") => {
+      setTimerSettingsCompact(false);
+      setTimerSettingsFocus(focus);
+      onOpenTimerSettings(focus);
+    },
+    [onOpenTimerSettings],
+  );
 
   const handleTrayQuickPomodoro = useCallback(() => {
     const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
@@ -407,12 +409,13 @@ export function FocusPlayer({
     }
 
     void onSetWindowPinned(true);
-    window.setTimeout(() => goalInputRef.current?.focus(), 150);
+    openFullTimerSettings("goal");
   }, [
     onChangeTimerSettings,
     onSelectTrack,
     onSetWindowPinned,
     onTimerSettingsChange,
+    openFullTimerSettings,
     timerSettings,
     tracks,
   ]);
@@ -430,7 +433,9 @@ export function FocusPlayer({
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const stop = await listen("tray-quick-pomodoro", () => {
-        handleTrayQuickPomodoroRef.current();
+        if (!cancelled) {
+          handleTrayQuickPomodoroRef.current();
+        }
       });
       if (cancelled) {
         stop();
@@ -444,27 +449,6 @@ export function FocusPlayer({
       unlisten?.();
     };
   }, []);
-
-  const handleGoalChange = (nextGoal: string) => {
-    setDraftGoal(nextGoal);
-    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
-    updateFn?.({
-      ...timerSettings,
-      goal: nextGoal,
-    });
-  };
-
-  const handleGoalBlur = () => {
-    const trimmed = draftGoal.trim();
-    setDraftGoal(trimmed);
-    if (trimmed !== timerSettings.goal) {
-      const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
-      updateFn?.({
-        ...timerSettings,
-        goal: trimmed,
-      });
-    }
-  };
 
   const isBreakPhase = currentPhase === "break";
 
@@ -502,20 +486,6 @@ export function FocusPlayer({
     setMobileMenuOpen(false);
     onOpenHub();
   }, [onOpenHub]);
-
-  const handleGoalKeyDown = (
-    event: React.KeyboardEvent<HTMLTextAreaElement>,
-  ) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleGoalBlur();
-      event.currentTarget.blur();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      setDraftGoal(timerSettings.goal);
-      event.currentTarget.blur();
-    }
-  };
 
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId),
@@ -690,18 +660,18 @@ export function FocusPlayer({
         </div>
 
         {!isBreakPhase ? (
-          <textarea
-            ref={goalInputRef}
-            rows={3}
-            className="timer-goal-input"
-            value={draftGoal}
-            placeholder="Set main task…"
-            aria-label="Main task"
-            maxLength={300}
-            onChange={(event) => handleGoalChange(event.target.value)}
-            onBlur={handleGoalBlur}
-            onKeyDown={handleGoalKeyDown}
-          />
+          <button
+            type="button"
+            className={`timer-goal-text-btn ${!timerSettings.goal ? "is-placeholder" : ""}`}
+            onClick={() => openFullTimerSettings("goal")}
+            aria-label={
+              timerSettings.goal
+                ? `Main task: ${timerSettings.goal}. Click to edit`
+                : "Set main task"
+            }
+          >
+            {timerSettings.goal || "Set main task…"}
+          </button>
         ) : (
           <div className="timer-goal-break-banner">
             ☕ Korzystaj z przerwy!
@@ -730,6 +700,7 @@ export function FocusPlayer({
             workDurationMinutes={timerSettings.workDurationMinutes}
             label={isBreakPhase ? "Przerwowe micro-cele" : "Subtasks"}
             isBreakPhase={isBreakPhase}
+            onAddClick={() => openFullTimerSettings("subtask")}
             onChange={
               isBreakPhase ? handleBreakMiniGoalsChange : handleMiniGoalsChange
             }
@@ -844,6 +815,7 @@ export function FocusPlayer({
         open={timerSettingsOpen}
         settings={timerSettings}
         compact={timerSettingsCompact}
+        initialFocus={timerSettingsFocus}
         onClose={onCloseTimerSettings}
         onChange={(settings) =>
           (onTimerSettingsChange ?? onChangeTimerSettings)?.(settings)

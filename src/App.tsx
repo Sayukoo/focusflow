@@ -157,7 +157,7 @@ function App() {
     [player.playQueue],
   );
   const handleOpenTimerSettings = useCallback(
-    () => player.setTimerSettingsOpen(true),
+    (_focus?: "goal" | "subtask") => player.setTimerSettingsOpen(true),
     [player.setTimerSettingsOpen],
   );
   const handleCloseTimerSettings = useCallback(

@@ -18,6 +18,7 @@ interface MiniGoalChecklistProps {
   label?: string;
   className?: string;
   isBreakPhase?: boolean;
+  onAddClick?: () => void;
   onChange: (items: MiniGoal[]) => void;
 }
 
@@ -31,6 +32,7 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
   label = "Mini goals",
   className,
   isBreakPhase,
+  onAddClick,
   onChange,
 }: MiniGoalChecklistProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
@@ -455,17 +457,31 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
           </li>
         ))}
         <li className="mini-goal-add-item">
-          <span className="mini-goal-add-plus" aria-hidden="true">+</span>
-          <input
-            className="mini-goal-input mini-goal-add-input"
-            type="text"
-            value={newSubtaskText}
-            placeholder="Add subtask…"
-            aria-label="Add new subtask"
-            onChange={(e) => setNewSubtaskText(e.target.value)}
-            onBlur={handleAddSubtask}
-            onKeyDown={handleNewSubtaskKeyDown}
-          />
+          {onAddClick ? (
+            <button
+              type="button"
+              className="mini-goal-add-trigger-btn"
+              onClick={onAddClick}
+              aria-label="Add subtask"
+            >
+              <span className="mini-goal-add-plus" aria-hidden="true">+</span>
+              <span className="mini-goal-add-placeholder">Add subtask…</span>
+            </button>
+          ) : (
+            <>
+              <span className="mini-goal-add-plus" aria-hidden="true">+</span>
+              <input
+                className="mini-goal-input mini-goal-add-input"
+                type="text"
+                value={newSubtaskText}
+                placeholder="Add subtask…"
+                aria-label="Add new subtask"
+                onChange={(e) => setNewSubtaskText(e.target.value)}
+                onBlur={handleAddSubtask}
+                onKeyDown={handleNewSubtaskKeyDown}
+              />
+            </>
+          )}
         </li>
       </ul>
     </div>

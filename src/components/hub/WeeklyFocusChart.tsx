@@ -58,23 +58,33 @@ export function WeeklyFocusChart({ store }: WeeklyFocusChartProps) {
       >
         <div className="analytics-chart-bars">
           {weekly.days.map((day) => {
-            const heightPercent = Math.min(
-              100,
-              Math.max(
-                8,
-                Math.round((day.focusTimeSeconds / weekly.maxSeconds) * 100),
-              ),
-            );
+            const heightPercent =
+              day.focusTimeSeconds > 0
+                ? Math.min(
+                    100,
+                    Math.max(
+                      12,
+                      Math.round(
+                        (day.focusTimeSeconds / weekly.maxSeconds) * 100,
+                      ),
+                    ),
+                  )
+                : 0;
             const formattedDuration = formatFocusDuration(day.focusTimeSeconds);
+            const dayTitle = `${day.date} (${day.dayLabel}): ${formattedDuration} · ${getPolishSessionsLabel(day.sessionsCount)}`;
             return (
               <KaTeXTooltip
                 key={day.date}
+                wrapperClassName="analytics-bar-tooltip-wrap"
                 formula={`\\text{${day.dayLabel}: ${formattedDuration} (${day.sessionsCount} sesj.)}`}
               >
                 <div
                   className={`analytics-bar-col ${day.isToday ? "is-today" : ""}`}
-                  title={`${day.date}: ${formattedDuration}`}
+                  title={dayTitle}
                 >
+                  <span className="analytics-bar-val">
+                    {day.focusTimeSeconds > 0 ? formattedDuration : "—"}
+                  </span>
                   <div className="analytics-bar-track">
                     <div
                       className="analytics-bar-fill"

@@ -147,11 +147,11 @@ export function TimerGoalSection({
           </div>
         </div>
       ) : null}
-      {miniGoals.length > 0 ? (
+      {settings.kind !== "infinite" ? (
         <div className="mini-goals-card" aria-label="Mini goals">
           <div className="mini-goals-card-heading">
             <Icon name="sparkles" size={14} />
-            <span>Mini goals</span>
+            <span>Mini goals (subtasks)</span>
           </div>
           <MiniGoalChecklist
             items={miniGoals}

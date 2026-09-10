@@ -83,15 +83,19 @@ export function MobileMenuAnalytics({
           <div className="analytics-chart-wrap" aria-label="7-day focus chart">
             <div className="analytics-chart-bars">
               {weeklyStats.days.map((day) => {
-                const heightPercent = Math.min(
-                  100,
-                  Math.max(
-                    8,
-                    Math.round(
-                      (day.focusTimeSeconds / weeklyStats.maxSeconds) * 100,
-                    ),
-                  ),
-                );
+                const heightPercent =
+                  day.focusTimeSeconds > 0
+                    ? Math.min(
+                        100,
+                        Math.max(
+                          12,
+                          Math.round(
+                            (day.focusTimeSeconds / weeklyStats.maxSeconds) *
+                              100,
+                          ),
+                        ),
+                      )
+                    : 0;
                 const formattedDuration = formatFocusDuration(
                   day.focusTimeSeconds,
                 );
@@ -99,12 +103,16 @@ export function MobileMenuAnalytics({
                 return (
                   <KaTeXTooltip
                     key={day.date}
+                    wrapperClassName="analytics-bar-tooltip-wrap"
                     formula={`\\text{${day.dayLabel}: ${formattedDuration} (${day.sessionsCount} sesj.)}`}
                   >
                     <div
                       className={`analytics-bar-col ${day.isToday ? "is-today" : ""}`}
                       title={dayTitle}
                     >
+                      <span className="analytics-bar-val">
+                        {day.focusTimeSeconds > 0 ? formattedDuration : "—"}
+                      </span>
                       <div className="analytics-bar-track">
                         <div
                           className="analytics-bar-fill"

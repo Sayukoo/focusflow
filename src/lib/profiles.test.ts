@@ -13,6 +13,7 @@ import {
   setActiveProfile,
   toggleProfileFavorite,
 } from "./profiles";
+import type { Track } from "../types";
 
 describe("profile storage", () => {
   beforeEach(() => {
@@ -116,5 +117,56 @@ describe("profile storage", () => {
     expect(deleted.profiles.some((profile) => profile.name === "Planning")).toBe(
       false,
     );
+  });
+
+  it("strictly enforces phonk in energizing and purges it from deep-work", () => {
+    // Simulate a store where phonk track was accidentally in deep-work
+    const store = createDefaultProfileStore();
+    store.migrationComplete = true;
+    store.trackIdsByProfile["deep-work"] = ["lofi-1", "phonk-1"];
+    store.trackIdsByProfile["energizing"] = [];
+
+    const reconciled = reconcileProfileTracks(
+      store,
+      ["lofi-1", "phonk-1"],
+      { "phonk-1": "energizing", "lofi-1": "deep-work" },
+    );
+
+    expect(getProfileTrackIds(reconciled, "deep-work")).toEqual(["lofi-1"]);
+    expect(getProfileTrackIds(reconciled, "energizing")).toEqual(["phonk-1"]);
+  });
+
+  it("identifies phonk as energetic and never chill", async () => {
+    const { isPhonkTrack, isEnergeticTrack, isChillTrack } = await import(
+      "./defaultTracks"
+    );
+
+    const phonkTrack: Track = {
+      id: "youtube:phonk-123",
+      title: "KORDHELL - Murder In My Mind",
+      filename: "murder.mp3",
+      path: "https://youtube.com/watch?v=phonk-123",
+      extension: "youtube",
+      source: "youtube",
+      category: "PHONK",
+    };
+
+    const lofiTrack: Track = {
+      id: "youtube:lofi-123",
+      title: "Kupla - Apogee",
+      filename: "apogee.mp3",
+      path: "https://youtube.com/watch?v=lofi-123",
+      extension: "youtube",
+      source: "youtube",
+      category: "LOFI",
+    };
+
+    expect(isPhonkTrack(phonkTrack)).toBe(true);
+    expect(isEnergeticTrack(phonkTrack)).toBe(true);
+    expect(isChillTrack(phonkTrack)).toBe(false);
+
+    expect(isPhonkTrack(lofiTrack)).toBe(false);
+    expect(isEnergeticTrack(lofiTrack)).toBe(false);
+    expect(isChillTrack(lofiTrack)).toBe(true);
   });
 });

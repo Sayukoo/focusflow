@@ -6,7 +6,6 @@ import type { PlaybackQueue, Track } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { MusicLibrary } from "../library/MusicLibrary";
-import { ProfilePicker } from "../settings/ProfilePicker";
 import { WeeklyFocusChart } from "./WeeklyFocusChart";
 
 interface HubPanelProps {
@@ -36,8 +35,8 @@ interface HubPanelProps {
   activeProfileId: string;
   userAboutMe?: string;
   onSelectProfile: (profileId: string) => void | Promise<void>;
-  onCreateProfile: (name: string) => void | Promise<void>;
-  onDeleteProfile: (profileId: string) => void | Promise<void>;
+  onCreateProfile?: (name: string) => void | Promise<void>;
+  onDeleteProfile?: (profileId: string) => void | Promise<void>;
   onUserAboutMeChange?: (userAboutMe: string) => void;
 }
 
@@ -69,8 +68,6 @@ export const HubPanel = memo(function HubPanel({
   activeProfileId,
   userAboutMe,
   onSelectProfile,
-  onCreateProfile,
-  onDeleteProfile,
   onUserAboutMeChange,
 }: HubPanelProps): ReactElement | null {
   if (!open) return null;
@@ -117,7 +114,9 @@ export const HubPanel = memo(function HubPanel({
             </span>
             <div className="hub-brand-copy">
               <strong className="hub-title">Centrum</strong>
-              <span className="hub-subtitle">FocusFlow · {activeProfileName}</span>
+              <span className="hub-subtitle">
+                FocusFlow · {isEnergizing ? "Energetyczne" : "Chillowe"}
+              </span>
             </div>
           </div>
 
@@ -125,32 +124,32 @@ export const HubPanel = memo(function HubPanel({
             <div
               className="hub-mode-switch"
               role="radiogroup"
-              aria-label="Tryb skupienia i muzyki"
+              aria-label="Kategoria muzyki"
             >
-              <KaTeXTooltip formula="\text{Tryb: Focus (Deep Work)}">
+              <KaTeXTooltip formula="\text{Kategoria: Chillowe (Lo-Fi, Ambient, Spokojna)}">
                 <button
                   type="button"
                   className={`hub-mode-btn hub-mode-btn--focus ${!isEnergizing ? "is-active" : ""}`}
                   role="radio"
                   aria-checked={!isEnergizing}
-                  aria-label="Tryb Focus"
+                  aria-label="Kategoria Chillowe"
                   onClick={handleSelectFocus}
                 >
                   <Icon name="target" size={15} />
-                  <span>Focus</span>
+                  <span>Chillowe</span>
                 </button>
               </KaTeXTooltip>
-              <KaTeXTooltip formula="\text{Tryb: Energizing}">
+              <KaTeXTooltip formula="\text{Kategoria: Energetyczne (Phonk, Rave, Elektronika)}">
                 <button
                   type="button"
                   className={`hub-mode-btn hub-mode-btn--energizing ${isEnergizing ? "is-active" : ""}`}
                   role="radio"
                   aria-checked={isEnergizing}
-                  aria-label="Tryb Energizing"
+                  aria-label="Kategoria Energetyczne"
                   onClick={handleSelectEnergizing}
                 >
                   <Icon name="flame" size={15} />
-                  <span>Energizing</span>
+                  <span>Energetyczne</span>
                 </button>
               </KaTeXTooltip>
             </div>
@@ -209,25 +208,6 @@ export const HubPanel = memo(function HubPanel({
           </div>
 
           {analyticsStore ? <WeeklyFocusChart store={analyticsStore} /> : null}
-
-          <div className="hub-section-heading" aria-hidden="true">
-            Konto i profile
-          </div>
-
-          <section className="hub-section hub-section--profiles" aria-label="Konto i profile">
-            <ProfilePicker
-              open
-              embedded
-              profiles={profiles}
-              activeProfileId={activeProfileId}
-              userAboutMe={userAboutMe}
-              onClose={onClose}
-              onSelect={onSelectProfile}
-              onCreate={onCreateProfile}
-              onDelete={onDeleteProfile}
-              onUserAboutMeChange={onUserAboutMeChange}
-            />
-          </section>
         </div>
       </aside>
     </div>

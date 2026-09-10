@@ -171,11 +171,14 @@ describe("FocusPlayer AI category chip", () => {
       ],
     };
 
+    const onOpenTimerSettings = vi.fn();
+
     render(
       <FocusPlayer
         {...createProps()}
         timerSettings={timerSettings}
         onChangeTimerSettings={onChangeTimerSettings}
+        onOpenTimerSettings={onOpenTimerSettings}
       />,
     );
 
@@ -187,7 +190,9 @@ describe("FocusPlayer AI category chip", () => {
     expect(document.querySelector(".focus-mini-goals--desktop")).not.toBeNull();
 
     const timer = screen.getByText("0:00", { selector: ".timer-display" });
-    const goal = screen.getByRole("textbox", { name: "Main task" });
+    const goal = screen.getByRole("button", {
+      name: `Main task: ${timerSettings.goal}. Click to edit`,
+    });
     const checkbox = screen.getByRole("checkbox", {
       name: "Mark subtask 1 complete",
     });
@@ -207,16 +212,12 @@ describe("FocusPlayer AI category chip", () => {
       ],
     });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Subtask 1" }), {
-      target: { value: "Review the document" },
-    });
-    expect(onChangeTimerSettings).toHaveBeenLastCalledWith({
-      ...timerSettings,
-      miniGoals: [
-        { ...timerSettings.miniGoals[0], text: "Review the document" },
-        timerSettings.miniGoals[1],
-      ],
-    });
+    fireEvent.click(goal);
+    expect(onOpenTimerSettings).toHaveBeenCalledWith("goal");
+
+    const addSubtask = screen.getByRole("button", { name: "Add subtask" });
+    fireEvent.click(addSubtask);
+    expect(onOpenTimerSettings).toHaveBeenCalledWith("subtask");
   });
 
   it("keeps timer taps out of settings and emits one confetti burst after fifteen taps", () => {

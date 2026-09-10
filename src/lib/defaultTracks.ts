@@ -101,10 +101,64 @@ export const DEFAULT_LOFI_TRACKS: Track[] = DEFAULT_LOFI_SEEDS.map((seed) =>
   buildTrack(seed, "LOFI"),
 );
 
+export const DEFAULT_LOFI_TRACK_IDS: string[] = DEFAULT_LOFI_TRACKS.map(
+  (track) => track.id,
+);
+
 export const DEFAULT_PHONK_TRACKS: Track[] = DEFAULT_PHONK_SEEDS.map((seed) =>
-  buildTrack(seed, "ELECTRONIC"),
+  buildTrack(seed, "PHONK"),
 );
 
 export const DEFAULT_PHONK_TRACK_IDS: string[] = DEFAULT_PHONK_TRACKS.map(
   (track) => track.id,
 );
+
+const PHONK_IDS_SET = new Set(DEFAULT_PHONK_TRACK_IDS);
+const LOFI_IDS_SET = new Set(DEFAULT_LOFI_TRACK_IDS);
+
+export function isPhonkTrack(track: Track): boolean {
+  if (PHONK_IDS_SET.has(track.id)) return true;
+  const category = (track.category ?? "").toUpperCase();
+  if (category === "PHONK") return true;
+  const text = `${track.title} ${track.filename} ${track.author ?? ""}`.toLowerCase();
+  return (
+    text.includes("phonk") ||
+    /\b(kordhell|dxrk|dvrst|interworld|playaphonk|kaito\s*shoma|memphis\s*cult)\b/i.test(
+      text,
+    )
+  );
+}
+
+export function isEnergeticTrack(track: Track): boolean {
+  if (isPhonkTrack(track)) return true;
+  const category = (track.category ?? "").toUpperCase();
+  if (category === "PHONK") return true;
+  const text = `${track.title} ${track.filename} ${track.author ?? ""}`.toLowerCase();
+  if (
+    /\b(phonk|rave|drift|hardstyle|gym|workout|bass|trap|metal|rock|hyperpop|nightcore|dnb|drum\s*and\s*bass|dubstep|electro|energetic|energy|intense|pump)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isChillTrack(track: Track): boolean {
+  if (LOFI_IDS_SET.has(track.id)) return true;
+  // If it's energetic or phonk, it can NEVER be chill!
+  if (isEnergeticTrack(track)) return false;
+  const category = (track.category ?? "").toUpperCase();
+  if (
+    category === "LOFI" ||
+    category === "AMBIENT" ||
+    category === "CLASSICAL" ||
+    category === "JAZZ" ||
+    category === "NATURE" ||
+    category === "SLEEP" ||
+    category === "FOCUS"
+  ) {
+    return true;
+  }
+  return true;
+}

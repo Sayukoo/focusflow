@@ -13,7 +13,13 @@ import {
   saveRemoteTracks,
   uniqueFilename,
 } from "../lib/audio";
-import { DEFAULT_PHONK_TRACK_IDS } from "../lib/defaultTracks";
+import {
+  DEFAULT_LOFI_TRACK_IDS,
+  DEFAULT_PHONK_TRACK_IDS,
+  isChillTrack,
+  isEnergeticTrack,
+  isPhonkTrack,
+} from "../lib/defaultTracks";
 import {
   assignTracksToProfile,
   getProfileTrackIds,
@@ -25,11 +31,27 @@ import {
 } from "../lib/profiles";
 import type { Track } from "../types";
 
-// Phonk starter tracks default into the Energizing profile instead of
-// whichever profile happens to be active when the library first loads.
-const DEFAULT_PROFILE_BY_TRACK_ID: Record<string, string> = Object.fromEntries(
-  DEFAULT_PHONK_TRACK_IDS.map((trackId) => [trackId, "energizing"]),
-);
+export function buildDefaultProfileMapping(
+  allTracks: Track[],
+): Record<string, string> {
+  const mapping: Record<string, string> = {
+    ...Object.fromEntries(
+      DEFAULT_LOFI_TRACK_IDS.map((trackId) => [trackId, "deep-work"]),
+    ),
+    ...Object.fromEntries(
+      DEFAULT_PHONK_TRACK_IDS.map((trackId) => [trackId, "energizing"]),
+    ),
+  };
+
+  for (const track of allTracks) {
+    if (isPhonkTrack(track) || isEnergeticTrack(track)) {
+      mapping[track.id] = "energizing";
+    } else if (isChillTrack(track)) {
+      mapping[track.id] = "deep-work";
+    }
+  }
+  return mapping;
+}
 
 const AUDIO_FILTERS = [
   {
@@ -90,16 +112,27 @@ export function useTrackLibrary({
     setTracks(listed);
   }, [filterTracksForProfile, runningInTauri]);
 
+  const getAllCurrentTracks = useCallback(async (): Promise<Track[]> => {
+    if (!runningInTauri) {
+      return [...browserTracksRef.current, ...remoteTracksRef.current];
+    }
+    const localTracks = await invoke<Track[]>("list_tracks").catch(
+      () => [] as Track[],
+    );
+    return [...localTracks, ...remoteTracksRef.current];
+  }, [runningInTauri]);
+
   const refresh = useCallback(async () => {
     if (!runningInTauri) {
       const allTracks = [
         ...browserTracksRef.current,
         ...remoteTracksRef.current,
       ];
+      const defaultProfiles = buildDefaultProfileMapping(allTracks);
       const nextProfileStore = reconcileProfileTracks(
         profileStoreRef.current,
         allTracks.map((track) => track.id),
-        DEFAULT_PROFILE_BY_TRACK_ID,
+        defaultProfiles,
       );
       commitProfileStore(nextProfileStore);
       const listed = filterTracksForProfile(allTracks);
@@ -115,10 +148,11 @@ export function useTrackLibrary({
       invoke<Track[]>("list_tracks"),
     ]);
     const allTracks = [...localTracks, ...remoteTracksRef.current];
+    const defaultProfiles = buildDefaultProfileMapping(allTracks);
     const nextProfileStore = reconcileProfileTracks(
       profileStoreRef.current,
       allTracks.map((track) => track.id),
-      DEFAULT_PROFILE_BY_TRACK_ID,
+      defaultProfiles,
     );
     commitProfileStore(nextProfileStore);
     const listed = filterTracksForProfile(allTracks);
@@ -134,6 +168,31 @@ export function useTrackLibrary({
     profileStoreRef,
     runningInTauri,
   ]);
+
+  const switchActiveProfile = useCallback(
+    async (profileId: string): Promise<Track[]> => {
+      activeProfileIdRef.current = profileId;
+      const allTracks = await getAllCurrentTracks();
+      const defaultProfiles = buildDefaultProfileMapping(allTracks);
+      const nextProfileStore = reconcileProfileTracks(
+        profileStoreRef.current,
+        allTracks.map((track) => track.id),
+        defaultProfiles,
+      );
+      commitProfileStore(nextProfileStore);
+      const listed = filterTracksForProfile(allTracks, profileId);
+      tracksRef.current = listed;
+      setTracks(listed);
+      return listed;
+    },
+    [
+      activeProfileIdRef,
+      commitProfileStore,
+      filterTracksForProfile,
+      getAllCurrentTracks,
+      profileStoreRef,
+    ],
+  );
 
   const pickBrowserFiles = useCallback((directory = false) => {
     return new Promise<File[]>((resolve) => {
@@ -498,6 +557,8 @@ export function useTrackLibrary({
     runningInTauri,
     filterTracksForProfile,
     refresh,
+    switchActiveProfile,
+    getAllCurrentTracks,
     importTracks,
     addRemoteLink,
     dropFiles,

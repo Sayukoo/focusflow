@@ -407,4 +407,29 @@ describe("Gemini track categories", () => {
     ).resolves.toBe("JAZZ");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("categorizes phonk tracks as PHONK", async () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "test-key");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: JSON.stringify({ category: "phonk" }) }],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      categorizeTrack({
+        ...track,
+        title: "KORDHELL - Murder In My Mind",
+      }),
+    ).resolves.toBe("PHONK");
+  });
 });

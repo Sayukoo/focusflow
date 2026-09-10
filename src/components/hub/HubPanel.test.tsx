@@ -62,7 +62,7 @@ describe("HubPanel", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("renders the music and profile sections together in one panel", () => {
+  it("renders the music library without the redundant bottom profile section", () => {
     render(<HubPanel {...createProps()} />);
 
     expect(
@@ -74,7 +74,7 @@ describe("HubPanel", () => {
     expect(
       screen.getByRole("button", { name: "Delete Focus track from Deep Work" }),
     ).toBeVisible();
-    expect(screen.getByText("Konto i profile")).toBeInTheDocument();
+    expect(screen.queryByText("Konto i profile")).not.toBeInTheDocument();
 
     // Verify Informacja o mnie tab in library
     const aboutTab = screen.getByRole("tab", { name: "Informacja o mnie" });
@@ -85,19 +85,21 @@ describe("HubPanel", () => {
     ).toBeVisible();
   });
 
-  it("renders Focus and Energizing mode switch in header and allows switching", () => {
+  it("renders Chillowe and Energetyczne category switch in header and allows switching", () => {
     const onSelectProfile = vi.fn();
     render(<HubPanel {...createProps()} onSelectProfile={onSelectProfile} />);
 
-    const focusBtn = screen.getByRole("radio", { name: "Tryb Focus" });
-    const energizingBtn = screen.getByRole("radio", { name: "Tryb Energizing" });
+    const chillBtn = screen.getByRole("radio", { name: "Kategoria Chillowe" });
+    const energeticBtn = screen.getByRole("radio", {
+      name: "Kategoria Energetyczne",
+    });
 
-    expect(focusBtn).toBeVisible();
-    expect(energizingBtn).toBeVisible();
-    expect(focusBtn).toHaveAttribute("aria-checked", "true");
-    expect(energizingBtn).toHaveAttribute("aria-checked", "false");
+    expect(chillBtn).toBeVisible();
+    expect(energeticBtn).toBeVisible();
+    expect(chillBtn).toHaveAttribute("aria-checked", "true");
+    expect(energeticBtn).toHaveAttribute("aria-checked", "false");
 
-    fireEvent.click(energizingBtn);
+    fireEvent.click(energeticBtn);
     expect(onSelectProfile).toHaveBeenCalledWith("energizing");
   });
 });
