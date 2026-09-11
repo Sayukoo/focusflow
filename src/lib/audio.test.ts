@@ -169,6 +169,33 @@ describe("parseRemoteLink", () => {
       provider: "youtube",
       providerId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
       providerKind: "playlist",
+      playlistId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+    });
+    expect(parseRemoteLink("https://music.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj")).toMatchObject({
+      provider: "youtube",
+      providerId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+      providerKind: "playlist",
+      playlistId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+    });
+    expect(parseRemoteLink("https://music.youtube.com/watch?v=ekr2nIex040&list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj")).toMatchObject({
+      provider: "youtube",
+      providerId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+      providerKind: "playlist",
+      playlistId: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
+      videoId: "ekr2nIex040",
+    });
+    expect(parseRemoteLink("https://music.youtube.com/playlist?list=OLAK5uy_kQ154vGz3w")).toMatchObject({
+      provider: "youtube",
+      providerId: "OLAK5uy_kQ154vGz3w",
+      providerKind: "playlist",
+      playlistId: "OLAK5uy_kQ154vGz3w",
+    });
+    expect(parseRemoteLink("https://music.youtube.com/watch?v=ekr2nIex040&list=RDekr2nIex040")).toMatchObject({
+      provider: "youtube",
+      providerId: "RDekr2nIex040",
+      providerKind: "playlist",
+      playlistId: "RDekr2nIex040",
+      videoId: "ekr2nIex040",
     });
     expect(parseRemoteLink("https://open.spotify.com/intl-pl/track/4uLU6hMCjMI75M1A2tKUQC")).toMatchObject({
       provider: "spotify",

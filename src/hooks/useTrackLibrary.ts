@@ -311,15 +311,28 @@ export function useTrackLibrary({
           if (fetchedPlaylistTracks.length === 0) {
             const metadata = await fetchRemoteMetadata(url, parsed);
             const providerId = metadata.providerId ?? parsed.providerId;
+            const isYouTube = parsed.provider === "youtube";
+            const videoId = parsed.videoId && /^[\w-]{11}$/.test(parsed.videoId) ? parsed.videoId : undefined;
+            const defaultTitle =
+              metadata.title &&
+              !metadata.title.startsWith("YouTube · PL") &&
+              !metadata.title.startsWith("YouTube · RD") &&
+              !metadata.title.startsWith("YouTube · OLAK")
+                ? metadata.title
+                : isYouTube
+                  ? `Playlista YouTube (${providerId})`
+                  : metadata.title;
+
             const remoteTrack: Track = {
               id: `${parsed.provider}:${providerId}`,
-              title: metadata.title,
-              filename: metadata.title,
+              title: defaultTitle,
+              filename: defaultTitle,
               path: url,
               extension: parsed.provider,
               source: parsed.provider,
               url,
-              videoId: parsed.provider === "youtube" ? providerId : undefined,
+              videoId,
+              playlistId: isYouTube ? providerId : undefined,
               providerId,
               providerKind: parsed.providerKind,
               thumbnail: metadata.thumbnail,
@@ -374,6 +387,7 @@ export function useTrackLibrary({
             (track.url === url ||
               track.providerId === parsed.providerId ||
               (parsed.provider === "youtube" &&
+                track.videoId &&
                 track.videoId === parsed.providerId)),
         );
         if (existing) {
@@ -394,6 +408,10 @@ export function useTrackLibrary({
 
         const metadata = await fetchRemoteMetadata(url, parsed);
         const providerId = metadata.providerId ?? parsed.providerId;
+        const videoId =
+          parsed.provider === "youtube"
+            ? (parsed.videoId ?? (/^[\w-]{11}$/.test(providerId) ? providerId : undefined))
+            : undefined;
         const remoteTrack: Track = {
           id: `${parsed.provider}:${providerId}`,
           title: metadata.title,
@@ -402,7 +420,8 @@ export function useTrackLibrary({
           extension: parsed.provider,
           source: parsed.provider,
           url,
-          videoId: parsed.provider === "youtube" ? providerId : undefined,
+          videoId,
+          playlistId: parsed.playlistId,
           providerId,
           providerKind: parsed.providerKind,
           thumbnail: metadata.thumbnail,

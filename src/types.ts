@@ -11,6 +11,7 @@ export interface Track {
   source?: "managed" | "browser" | RemoteProvider;
   url?: string;
   videoId?: string;
+  playlistId?: string;
   providerId?: string;
   providerKind?: string;
   thumbnail?: string;

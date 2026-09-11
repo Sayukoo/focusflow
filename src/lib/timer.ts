@@ -302,3 +302,30 @@ function normalizeMiniGoals(value: unknown): MiniGoal[] {
 
   return miniGoals;
 }
+
+/**
+ * Returns true only when a focus goal has been explicitly set AND the session
+ * is in a finite mode with a valid duration (not infinite and not untargeted).
+ */
+export function isFocusAnalyticsEligible(
+  settings?: Pick<
+    TimerSettings,
+    "kind" | "goal" | "durationMinutes" | "workDurationMinutes" | "miniGoals"
+  > | null,
+): boolean {
+  if (!settings) return false;
+  const hasGoal = Boolean(
+    (settings.goal && settings.goal.trim().length > 0) ||
+      (settings.miniGoals &&
+        settings.miniGoals.some((g) => g.text && g.text.trim().length > 0)),
+  );
+  if (!hasGoal) return false;
+  if (settings.kind === "infinite") return false;
+  if (settings.kind === "timer") {
+    return (settings.durationMinutes ?? 0) > 0;
+  }
+  if (settings.kind === "intervals") {
+    return settings.workDurationMinutes > 0;
+  }
+  return false;
+}

@@ -273,10 +273,9 @@ fn update_discord_presence(
         }
 
         let mut assets_builder = activity::Assets::new();
-        let mut has_assets = false;
         let large_key = payload.large_image_key.as_deref().unwrap_or("app_icon");
         assets_builder = assets_builder.large_image(large_key);
-        has_assets = true;
+        let has_assets = true;
 
         if let Some(ref large_txt) = payload.large_image_text {
             assets_builder = assets_builder.large_text(large_txt);
@@ -388,6 +387,36 @@ fn set_window_pinned(
     Ok(())
 }
 
+#[tauri::command]
+fn fetch_url_content(url: String) -> Result<String, String> {
+    use std::process::Command;
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = Command::new("curl");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x0800_0000);
+
+    let output = cmd
+        .arg("-s")
+        .arg("-L")
+        .arg("--max-time")
+        .arg("12")
+        .arg("-A")
+        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .arg("-H")
+        .arg("Accept-Language: en-US,en;q=0.9")
+        .arg(&url)
+        .output()
+        .map_err(|e| format!("Failed to execute curl: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!("curl exited with status code {:?}", output.status.code()));
+    }
+
+    String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 response: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pin_state = WindowPinState::new();
@@ -422,7 +451,8 @@ pub fn run() {
             list_running_apps,
             start_app_lock,
             stop_app_lock,
-            set_window_pinned
+            set_window_pinned,
+            fetch_url_content
         ])
         .setup(move |app| {
             let _ = ensure_music_dir(app.handle().clone());

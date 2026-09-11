@@ -186,6 +186,8 @@ export interface ParsedRemoteLink {
   providerId: string;
   providerKind?: string;
   url: string;
+  videoId?: string;
+  playlistId?: string;
 }
 
 export function parseRemoteLink(value: string): ParsedRemoteLink | null {
@@ -193,22 +195,26 @@ export function parseRemoteLink(value: string): ParsedRemoteLink | null {
   if (!url) return null;
 
   const ytPlaylistId = parseYouTubePlaylistId(value);
+  const youtubeId = parseYouTubeVideoId(value);
+
   if (ytPlaylistId) {
     return {
       provider: "youtube",
       providerId: ytPlaylistId,
       providerKind: "playlist",
       url: url.toString(),
+      playlistId: ytPlaylistId,
+      videoId: youtubeId ?? undefined,
     };
   }
 
-  const youtubeId = parseYouTubeVideoId(value);
   if (youtubeId) {
     return {
       provider: "youtube",
       providerId: youtubeId,
       providerKind: "video",
       url: url.toString(),
+      videoId: youtubeId,
     };
   }
 
@@ -395,19 +401,33 @@ export async function hydrateYouTubeThumbnails(
 
 export async function fetchYouTubeMetadata(
   url: string,
-  videoId: string,
-): Promise<{ title: string; thumbnail: string; author?: string }> {
+  providerId: string,
+  link?: ParsedRemoteLink | null,
+): Promise<{ title: string; thumbnail?: string; author?: string }> {
+  const isPlaylist =
+    link?.providerKind === "playlist" || !/^[\w-]{11}$/.test(providerId);
+  const videoId =
+    link?.videoId && /^[\w-]{11}$/.test(link.videoId)
+      ? link.videoId
+      : !isPlaylist && /^[\w-]{11}$/.test(providerId)
+        ? providerId
+        : undefined;
+
   const fallback = {
-    title: `YouTube · ${videoId}`,
-    thumbnail: youtubeThumbnail(videoId),
+    title: isPlaylist ? "Playlista YouTube" : `YouTube · ${providerId}`,
+    thumbnail: videoId ? youtubeThumbnail(videoId) : undefined,
   };
+
+  const oembedUrl = videoId
+    ? `https://www.youtube.com/watch?v=${videoId}`
+    : url;
 
   try {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(
-        `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(oembedUrl)}&format=json`,
         { signal: controller.signal },
       );
 
@@ -441,7 +461,7 @@ export async function fetchRemoteMetadata(
   providerId?: string;
 }> {
   if (link.provider === "youtube") {
-    return fetchYouTubeMetadata(url, link.providerId);
+    return fetchYouTubeMetadata(url, link.providerId, link);
   }
 
   const providerLabel =
@@ -491,28 +511,104 @@ export async function fetchRemoteMetadata(
   }
 }
 
+async function fetchHtml(targetUrl: string, timeoutMs = 12000): Promise<string> {
+  if (isTauriRuntime()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const content = await invoke<string>("fetch_url_content", { url: targetUrl });
+      if (content && content.trim()) return content;
+    } catch {
+      // Fall back to standard fetch if Tauri command is unavailable
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(targetUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return "";
+    return await response.text();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function extractYtInitialData(html: string): Record<string, unknown> | null {
+  const marker = "ytInitialData = ";
+  const startIdx = html.indexOf(marker);
+  if (startIdx === -1) return null;
+
+  const jsonStart = html.indexOf("{", startIdx + marker.length);
+  if (jsonStart === -1) return null;
+
+  const scriptEnd = html.indexOf("</script>", jsonStart);
+  let jsonSlice = scriptEnd !== -1 ? html.slice(jsonStart, scriptEnd).trim() : html.slice(jsonStart).trim();
+
+  if (jsonSlice.endsWith(";")) {
+    jsonSlice = jsonSlice.slice(0, -1).trim();
+  }
+
+  try {
+    return JSON.parse(jsonSlice) as Record<string, unknown>;
+  } catch {
+    // If there was extra content before </script>, find balanced braces
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let endIdx = -1;
+    const maxLen = scriptEnd !== -1 ? scriptEnd : Math.min(html.length, jsonStart + 5_000_000);
+
+    for (let i = jsonStart; i < maxLen; i++) {
+      const char = html[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (char === "\\") {
+        escape = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (char === "{") depth++;
+        else if (char === "}") {
+          depth--;
+          if (depth === 0) {
+            endIdx = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (endIdx !== -1) {
+      try {
+        return JSON.parse(html.slice(jsonStart, endIdx)) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 export async function fetchYouTubePlaylistTracks(
   playlistId: string,
 ): Promise<Track[]> {
   const playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
   try {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 10000);
-    let html = "";
-    try {
-      const response = await fetch(playlistUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        signal: controller.signal,
-      });
-      if (!response.ok) return [];
-      html = await response.text();
-    } finally {
-      window.clearTimeout(timeout);
-    }
+    const html = await fetchHtml(playlistUrl);
+    if (!html) return [];
 
     const items: Array<{
       videoId: string;
@@ -521,65 +617,67 @@ export async function fetchYouTubePlaylistTracks(
       thumbnail?: string;
     }> = [];
 
-    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s);
-    if (match) {
-      try {
-        const data = JSON.parse(match[1]) as Record<string, unknown>;
+    const data = extractYtInitialData(html);
+    if (data) {
+      function walk(obj: unknown) {
+        if (!obj || typeof obj !== "object") return;
+        const rec = obj as Record<string, unknown>;
 
-        function walk(obj: unknown) {
-          if (!obj || typeof obj !== "object") return;
-          const rec = obj as Record<string, unknown>;
-
-          if (rec.playlistVideoRenderer && typeof rec.playlistVideoRenderer === "object") {
-            const v = rec.playlistVideoRenderer as {
-              videoId?: string;
-              title?: { runs?: Array<{ text?: string }>; simpleText?: string };
-              shortBylineText?: { runs?: Array<{ text?: string }> };
-              ownerText?: { runs?: Array<{ text?: string }> };
-              thumbnail?: { thumbnails?: Array<{ url?: string }> };
-            };
-            if (v.videoId && !items.some((item) => item.videoId === v.videoId)) {
-              const title =
-                v.title?.runs?.[0]?.text || v.title?.simpleText || `YouTube · ${v.videoId}`;
-              const author =
-                v.shortBylineText?.runs?.[0]?.text || v.ownerText?.runs?.[0]?.text || "YouTube";
-              const thumbnail =
-                v.thumbnail?.thumbnails?.slice(-1)[0]?.url || youtubeThumbnail(v.videoId);
-              items.push({ videoId: v.videoId, title, author, thumbnail });
-            }
-          }
-
-          if (rec.lockupViewModel && typeof rec.lockupViewModel === "object") {
-            const lockup = rec.lockupViewModel as {
-              contentId?: string;
-              contentType?: string;
-              metadata?: { lockupMetadataViewModel?: { title?: { content?: string } } };
-              rendererContext?: { accessibilityContext?: { label?: string } };
-            };
-            if (
-              lockup.contentId &&
-              lockup.contentType === "LOCKUP_CONTENT_TYPE_VIDEO" &&
-              !items.some((item) => item.videoId === lockup.contentId)
-            ) {
-              const videoId = lockup.contentId;
-              const metaTitle = lockup.metadata?.lockupMetadataViewModel?.title?.content;
-              const labelTitle = lockup.rendererContext?.accessibilityContext?.label;
-              const title =
-                metaTitle || (labelTitle ? labelTitle.split(" by ")[0] : `YouTube · ${videoId}`);
-              const thumbnail = youtubeThumbnail(videoId);
-              items.push({ videoId, title, author: "YouTube", thumbnail });
-            }
-          }
-
-          for (const key of Object.keys(rec)) {
-            walk(rec[key]);
+        if (rec.playlistVideoRenderer && typeof rec.playlistVideoRenderer === "object") {
+          const v = rec.playlistVideoRenderer as {
+            videoId?: string;
+            title?: { runs?: Array<{ text?: string }>; simpleText?: string };
+            shortBylineText?: { runs?: Array<{ text?: string }> };
+            ownerText?: { runs?: Array<{ text?: string }> };
+            thumbnail?: { thumbnails?: Array<{ url?: string }> };
+          };
+          if (
+            v.videoId &&
+            /^[\w-]{11}$/.test(v.videoId) &&
+            !items.some((item) => item.videoId === v.videoId)
+          ) {
+            const title =
+              v.title?.runs?.[0]?.text || v.title?.simpleText || `YouTube · ${v.videoId}`;
+            const author =
+              v.shortBylineText?.runs?.[0]?.text || v.ownerText?.runs?.[0]?.text || "YouTube";
+            const thumbnail =
+              v.thumbnail?.thumbnails?.slice(-1)[0]?.url || youtubeThumbnail(v.videoId);
+            items.push({ videoId: v.videoId, title, author, thumbnail });
           }
         }
 
-        walk(data);
-      } catch {
-        // fallback to regex extraction
+        if (rec.lockupViewModel && typeof rec.lockupViewModel === "object") {
+          const lockup = rec.lockupViewModel as {
+            contentId?: string;
+            contentType?: string;
+            metadata?: { lockupMetadataViewModel?: { title?: { content?: string } } };
+            rendererContext?: { accessibilityContext?: { label?: string } };
+          };
+          if (
+            lockup.contentId &&
+            /^[\w-]{11}$/.test(lockup.contentId) &&
+            lockup.contentType === "LOCKUP_CONTENT_TYPE_VIDEO" &&
+            !items.some((item) => item.videoId === lockup.contentId)
+          ) {
+            const videoId = lockup.contentId;
+            const metaTitle = lockup.metadata?.lockupMetadataViewModel?.title?.content;
+            const labelTitle = lockup.rendererContext?.accessibilityContext?.label;
+            const title =
+              metaTitle ||
+              (labelTitle
+                ? labelTitle.split(/\s+\d+\s+minutes|\s+by\s+/i)[0]
+                : `YouTube · ${videoId}`);
+            const thumbnail = youtubeThumbnail(videoId);
+            items.push({ videoId, title: title.trim(), author: "YouTube", thumbnail });
+          }
+        }
+
+        for (const key of Object.keys(rec)) {
+          walk(rec[key]);
+        }
       }
+
+      walk(data);
     }
 
     if (items.length === 0) {
@@ -598,7 +696,7 @@ export async function fetchYouTubePlaylistTracks(
     }
 
     return items.map((item) => {
-      const trackUrl = `https://www.youtube.com/watch?v=${item.videoId}`;
+      const trackUrl = `https://www.youtube.com/watch?v=${item.videoId}&list=${playlistId}`;
       return {
         id: `youtube:${item.videoId}`,
         title: item.title,
@@ -608,6 +706,7 @@ export async function fetchYouTubePlaylistTracks(
         source: "youtube" as const,
         url: trackUrl,
         videoId: item.videoId,
+        playlistId,
         providerId: item.videoId,
         providerKind: "video",
         thumbnail: item.thumbnail || youtubeThumbnail(item.videoId),

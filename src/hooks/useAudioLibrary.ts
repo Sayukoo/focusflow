@@ -13,6 +13,7 @@ import {
 import {
   elapsedSecondsFromMs,
   getIntervalPhase,
+  isFocusAnalyticsEligible,
   normalizeTimerSettings,
   pauseTimerClock,
   readTimerElapsedMs,
@@ -356,21 +357,22 @@ export function useAudioLibrary() {
         startTimerClock(timerClockRef.current, nowMs);
       }
 
-      if (!isFocusing) {
+      const isEligible = isFocusAnalyticsEligible(settings);
+      const canTrackStats = shouldAdvance && isFocusing && isEligible;
+
+      if (!canTrackStats) {
         resetAnalyticsTick();
-        return;
+      } else {
+        const elapsedMs = readTimerElapsedMs(timerClockRef.current, nowMs);
+        const isWorkPhase =
+          settings.kind !== "intervals" ||
+          getIntervalPhase(elapsedMs, settings).phase === "work";
+        trackFocusTick(nowMs, isWorkPhase);
       }
-
-      const elapsedMs = readTimerElapsedMs(timerClockRef.current, nowMs);
-
-      const isWorkPhase =
-        settings.kind !== "intervals" ||
-        getIntervalPhase(elapsedMs, settings).phase === "work";
-
-      trackFocusTick(nowMs, isWorkPhase);
 
       if (!shouldAdvance) return;
 
+      const elapsedMs = readTimerElapsedMs(timerClockRef.current, nowMs);
       const limitMs = timerLimitMs(settings);
 
       if (limitMs !== null && elapsedMs >= limitMs) {
@@ -387,7 +389,9 @@ export function useAudioLibrary() {
             phase: "complete",
             cycleIndex: null,
           };
-          recordSessionCompletion();
+          if (isEligible) {
+            recordSessionCompletion();
+          }
           announceTimerCue("complete", settings);
         }
         return;
@@ -409,7 +413,7 @@ export function useAudioLibrary() {
             cycleIndex: phaseState.cycleIndex,
           };
           if (!isInitialBaseline) {
-            if (baseline.phase === "work") {
+            if (baseline.phase === "work" && isEligible) {
               recordSessionCompletion();
             }
             announceTimerCue(

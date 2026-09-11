@@ -13,9 +13,6 @@ interface HeaderControlsProps {
   onOpenMobileMenu?: () => void;
   mobileMenuOpen?: boolean;
   leading?: ReactNode;
-  /** Zen mode: hide everything except the timer and the goal. */
-  zenMode?: boolean;
-  onToggleZen?: () => void;
 }
 
 // PERF: memo — parent re-renders every timer tick; header is static between ticks.
@@ -29,8 +26,6 @@ export const HeaderControls = memo(function HeaderControls({
   onOpenMobileMenu,
   mobileMenuOpen = false,
   leading,
-  zenMode = false,
-  onToggleZen,
 }: HeaderControlsProps): ReactElement {
   const volumePct = Math.round(volume * 100);
 
@@ -56,31 +51,6 @@ export const HeaderControls = memo(function HeaderControls({
             </div>
           </KaTeXTooltip>
         </div>
-      )}
-
-      {onToggleZen && (
-        <KaTeXTooltip
-          wrapperClassName="zen-control"
-          formula={
-            zenMode
-              ? "\\text{Wyjdź z trybu Zen}"
-              : "\\text{Tryb Zen: tylko timer}"
-          }
-        >
-          <button
-            type="button"
-            className={
-              zenMode
-                ? "icon-btn ghost zen-toggle-btn is-active"
-                : "icon-btn ghost zen-toggle-btn"
-            }
-            aria-label={zenMode ? "Exit Zen mode" : "Zen mode — timer only"}
-            aria-pressed={zenMode}
-            onClick={onToggleZen}
-          >
-            <Icon name="zen" size={18} />
-          </button>
-        </KaTeXTooltip>
       )}
 
       <KaTeXTooltip

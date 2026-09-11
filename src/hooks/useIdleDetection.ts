@@ -11,7 +11,7 @@ const IDLE_EVENTS = [
 /**
  * Returns true once the user has not interacted for `idleDelayMs`.
  * Any pointer/keyboard/wheel/touch activity instantly resets to false.
- * Used by Zen mode to fade the UI down to the timer only.
+ * Used by UI auto-dim to fade chrome down to the timer only.
  */
 export function useIdleDetection(idleDelayMs = 10_000): boolean {
   const [isIdle, setIsIdle] = useState(false);

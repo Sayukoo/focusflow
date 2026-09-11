@@ -103,28 +103,7 @@ interface FocusPlayerProps {
 
 const CONFETTI_TAP_COUNT = 15;
 
-const ZEN_MODE_STORAGE_KEY = "brainfm.zen_mode";
 const UI_IDLE_DELAY_MS = 10_000;
-
-function readZenModePref(): boolean {
-  try {
-    return localStorage.getItem(ZEN_MODE_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function persistZenModePref(value: boolean): void {
-  try {
-    if (value) {
-      localStorage.setItem(ZEN_MODE_STORAGE_KEY, "1");
-    } else {
-      localStorage.removeItem(ZEN_MODE_STORAGE_KEY);
-    }
-  } catch {
-    // Storage might be restricted.
-  }
-}
 
 export function FocusPlayer({
   tracks,
@@ -192,17 +171,7 @@ export function FocusPlayer({
 }: FocusPlayerProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hotkeysModalOpen, setHotkeysModalOpen] = useState(false);
-  const [zenMode, setZenMode] = useState(() => readZenModePref());
-  // Zen companion: after 10s without input the chrome fades to 10%.
   const uiIdle = useIdleDetection(UI_IDLE_DELAY_MS);
-
-  const handleToggleZen = useCallback(() => {
-    setZenMode((prev) => {
-      const next = !prev;
-      persistZenModePref(next);
-      return next;
-    });
-  }, []);
 
   useKeyboardShortcuts({
     onTogglePlay: () => void onTogglePlay(),
@@ -236,10 +205,6 @@ export function FocusPlayer({
       }
       if (hubOpen) {
         onCloseHub();
-        return;
-      }
-      if (zenMode) {
-        handleToggleZen();
         return;
       }
       if (windowPinned) {
@@ -587,7 +552,6 @@ export function FocusPlayer({
     browserMode ? "is-browser" : "",
     windowPinned ? "is-window-pinned" : "",
     favoritesOnly ? "is-favorites-only" : "",
-    zenMode ? "is-zen" : "",
     uiIdle ? "is-ui-idle" : "",
   ]
     .filter(Boolean)
@@ -622,8 +586,6 @@ export function FocusPlayer({
           onOpenMobileMenu={openMobileMenu}
           mobileMenuOpen={mobileMenuOpen}
           leading={quickPomodoroControl}
-          zenMode={zenMode}
-          onToggleZen={handleToggleZen}
         />
       </header>
 

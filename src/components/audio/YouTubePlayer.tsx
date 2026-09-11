@@ -24,6 +24,9 @@ interface YouTubePlayerInstance {
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   setVolume: (volume: number) => void;
   setPlaybackRate?: (suggestedRate: number) => void;
+  nextVideo?: () => void;
+  previousVideo?: () => void;
+  getVideoData?: () => { video_id?: string; title?: string; author?: string };
 }
 
 interface YouTubeApi {
@@ -32,7 +35,7 @@ interface YouTubeApi {
     options: {
       height: string;
       width: string;
-      videoId: string;
+      videoId?: string;
       playerVars: Record<string, string | number>;
       events: {
         onReady: (event: { target: YouTubePlayerInstance }) => void;
@@ -97,8 +100,19 @@ export function YouTubePlayer({
     onTime,
   };
 
+  const rawVideoId = track?.videoId;
+  const isVideoIdValid = Boolean(rawVideoId && /^[\w-]{11}$/.test(rawVideoId));
+  const videoId = isVideoIdValid ? rawVideoId : undefined;
+  const playlistId =
+    track?.playlistId ??
+    (track?.providerKind === "playlist" && track.providerId
+      ? track.providerId
+      : !isVideoIdValid && rawVideoId
+        ? rawVideoId
+        : undefined);
+
   useEffect(() => {
-    if (!track?.videoId || !hostRef.current) {
+    if ((!videoId && !playlistId) || !hostRef.current) {
       if (resumeTimerRef.current !== null) {
         window.clearTimeout(resumeTimerRef.current);
         resumeTimerRef.current = null;
@@ -160,19 +174,26 @@ export function YouTubePlayer({
       .then((api) => {
         if (disposed || !hostRef.current || !playerMount.isConnected) return;
 
+        const playerVars: Record<string, string | number> = {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          origin: window.location.origin,
+        };
+
+        if (playlistId) {
+          playerVars.listType = "playlist";
+          playerVars.list = playlistId;
+        }
+
         playerRef.current = new api.Player(playerMount, {
           height: "1",
           width: "1",
-          videoId: track.videoId!,
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            modestbranding: 1,
-            playsinline: 1,
-            origin: window.location.origin,
-          },
+          ...(videoId ? { videoId } : {}),
+          playerVars,
           events: {
             onReady: (event) => {
               resumeAttempts = 0;
@@ -214,7 +235,14 @@ export function YouTubePlayer({
               }
             },
             onError: (event) => {
-              callbacksRef.current.onError(`YouTube player error (${event.data}).`);
+              const code = event.data;
+              let msg = `YouTube player error (${code}).`;
+              if (code === 2) msg = "Invalid YouTube video or playlist parameter.";
+              else if (code === 5) msg = "HTML5 player error on YouTube.";
+              else if (code === 100) msg = "YouTube video or playlist not found.";
+              else if (code === 101 || code === 150)
+                msg = "Playback not allowed outside YouTube by owner.";
+              callbacksRef.current.onError(msg);
             },
           },
         });
@@ -238,7 +266,7 @@ export function YouTubePlayer({
       playerRef.current = null;
       host.replaceChildren();
     };
-  }, [track?.videoId]);
+  }, [videoId, playlistId]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -277,7 +305,7 @@ export function YouTubePlayer({
   }, [seekRequest]);
 
   useEffect(() => {
-    if (!track?.videoId) return;
+    if (!videoId && !playlistId) return;
 
     const timer = window.setInterval(() => {
       const player = playerRef.current;
@@ -293,7 +321,7 @@ export function YouTubePlayer({
     }, 350);
 
     return () => window.clearInterval(timer);
-  }, [track?.videoId]);
+  }, [videoId, playlistId]);
 
   return <div ref={hostRef} className="youtube-player-host" aria-hidden="true" />;
 }

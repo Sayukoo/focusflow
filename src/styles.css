@@ -7010,10 +7010,8 @@ button {
 
 
 /* ============================================================
-   ZEN MODE & UI AUTO-DIM
-   Zen ('timer only'): one click hides mini-goals, track meta and
-   the stats badge — the timer and goal stay.
-   Auto-dim: after 10s without input everything except the timer
+   UI AUTO-DIM
+   After 10s without input everything except the timer
    and the goal fades to 10%; any input brings it right back.
    ============================================================ */
 
@@ -7032,24 +7030,6 @@ button {
 /* Presentation feel: the cursor disappears together with the chrome. */
 .focus-shell.is-ui-idle {
   cursor: none;
-}
-
-.focus-shell.is-zen .now-playing,
-.focus-shell.is-zen .focus-mini-goals,
-.focus-shell.is-zen .focus-stats-badge {
-  display: none;
-}
-
-.zen-toggle-btn.is-active {
-  border: 0 !important;
-  background: rgba(111, 180, 255, 0.18) !important;
-  color: #a9ddff !important;
-  box-shadow: none !important;
-}
-
-.zen-toggle-btn.is-active:hover {
-  background: rgba(111, 180, 255, 0.28) !important;
-  color: #ffffff !important;
 }
 
 /* --- One-line focus stats (top-left corner) --- */

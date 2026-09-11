@@ -101,14 +101,24 @@ export const TimerSettings = memo(function TimerSettings({
 
   useEffect(() => {
     if (!open) return;
-    setDraftSettings(activeSettings);
+    if (activeSettings.kind === "infinite" && initialFocus === "goal") {
+      setDraftSettings({
+        ...activeSettings,
+        kind: "intervals",
+        durationMinutes: 25,
+        workDurationMinutes: 25,
+        breakDurationMinutes: 5,
+      });
+    } else {
+      setDraftSettings(activeSettings);
+    }
     setGoalDraft(activeSettings.goal);
     setGoalError("");
     setMiniGoals(activeSettings.miniGoals.map((miniGoal) => ({ ...miniGoal })));
     setMiniGoalsError("");
     setClarificationQuestion("");
     setClarificationAnswer("");
-  }, [open, activeSettings]);
+  }, [open, activeSettings, initialFocus]);
 
   useEffect(
     () => () => {
@@ -332,12 +342,22 @@ export const TimerSettings = memo(function TimerSettings({
   };
 
   const handleApply = () => {
-    const goal = settings.kind === "infinite" ? "" : requireGoal();
-    if (settings.kind !== "infinite" && !goal) return;
+    let effectiveSettings = settings;
+    if (settings.kind === "infinite" && goalDraft.trim()) {
+      effectiveSettings = {
+        ...settings,
+        kind: "intervals",
+        durationMinutes: 25,
+        workDurationMinutes: 25,
+        breakDurationMinutes: 5,
+      };
+    }
+    const goal = effectiveSettings.kind === "infinite" ? "" : requireGoal();
+    if (effectiveSettings.kind !== "infinite" && !goal) return;
     const next = normalizeTimerSettings({
-      ...settings,
+      ...effectiveSettings,
       goal,
-      miniGoals: settings.kind === "infinite" ? [] : miniGoals,
+      miniGoals: effectiveSettings.kind === "infinite" ? [] : miniGoals,
     });
     onChange(next);
     onClose();

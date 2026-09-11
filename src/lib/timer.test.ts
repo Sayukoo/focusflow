@@ -6,6 +6,7 @@ import {
   elapsedSecondsFromMs,
   getIntervalPhase,
   intervalDurationsMs,
+  isFocusAnalyticsEligible,
   normalizeMiniGoalText,
   normalizeTimerSettings,
   pauseTimerClock,
@@ -238,6 +239,116 @@ describe("timer clock", () => {
     ).toMatchObject({
       phaseVoiceEnabled: true,
       voicePack: "calm-female",
+    });
+  });
+
+  describe("isFocusAnalyticsEligible", () => {
+    it("rejects untargeted or infinite sessions", () => {
+      expect(isFocusAnalyticsEligible(null)).toBe(false);
+      expect(isFocusAnalyticsEligible(undefined)).toBe(false);
+
+      // Default settings with empty goal
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "intervals",
+          goal: "",
+          workDurationMinutes: 25,
+          durationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
+
+      // Infinite mode should never count towards focus stats
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "infinite",
+          goal: "",
+          durationMinutes: null,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
+
+      // Even if infinite mode somehow has text, it remains ineligible because no duration is set
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "infinite",
+          goal: "Relaxing with music",
+          durationMinutes: null,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
+    });
+
+    it("rejects sessions without a goal or with empty whitespace goal", () => {
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "timer",
+          goal: "   ",
+          durationMinutes: 30,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
+
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "intervals",
+          goal: "  \n\t  ",
+          durationMinutes: 25,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
+    });
+
+    it("accepts finite sessions with an active goal and positive minutes", () => {
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "timer",
+          goal: "Finish project documentation",
+          durationMinutes: 45,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(true);
+
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "intervals",
+          goal: "Deep work session 1",
+          durationMinutes: 25,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(true);
+    });
+
+    it("accepts sessions when subtasks/mini-goals are present even if main goal text is pending", () => {
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "intervals",
+          goal: "",
+          durationMinutes: 25,
+          workDurationMinutes: 25,
+          miniGoals: [
+            { id: "g1", text: "Write intro paragraph", completed: false },
+          ],
+        }),
+      ).toBe(true);
+    });
+
+    it("rejects timer mode if duration is zero or negative", () => {
+      expect(
+        isFocusAnalyticsEligible({
+          kind: "timer",
+          goal: "Test goal",
+          durationMinutes: 0,
+          workDurationMinutes: 25,
+          miniGoals: [],
+        }),
+      ).toBe(false);
     });
   });
 });
