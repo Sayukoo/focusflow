@@ -8,6 +8,7 @@ import {
   loadPlayerSnapshot,
   nextTrackIndex,
   previousTrackIndex,
+  resolvePlaylistTracks,
   savePlayerSnapshot,
 } from "../lib/audio";
 import {
@@ -31,7 +32,9 @@ import { getTrackCategory } from "../lib/gemini";
 import {
   DEFAULT_TIMER_SETTINGS,
   type PlaybackQueue,
+  type RemoteTrackInfo,
   type TimerSettings,
+  type Track,
 } from "../types";
 import { useAnalyticsTracker } from "./useAnalyticsTracker";
 import { useAudioPlaybackEngine } from "./useAudioPlaybackEngine";
@@ -79,7 +82,8 @@ export function useAudioLibrary() {
     getVolume: () => engine.volumeRef.current,
   });
 
-  const [volumeNormalization, setVolumeNormalizationState] = useState(true);
+  // Default to false so tracks play with untouched, full dynamic range and bass.
+  const [volumeNormalization, setVolumeNormalizationState] = useState(false);
   const setVolumeNormalization = useCallback((enabled: boolean) => {
     setVolumeNormalizationState(Boolean(enabled));
   }, []);
@@ -106,6 +110,7 @@ export function useAudioLibrary() {
     setPlayingState,
     setProgress,
     setRemoteSeekRequest,
+    setCurrentTrackId,
   } = engine;
   const { loadTrack } = engine;
 
@@ -178,6 +183,22 @@ export function useAudioLibrary() {
             ? !category
             : category === queue.category;
         });
+      }
+      if (queue.kind === "playlist") {
+        const dummyTrack =
+          library.tracksRef.current.find(
+            (track) =>
+              track.playlistId === queue.playlistId ||
+              track.providerId === queue.playlistId,
+          ) ??
+          ({
+            id: `playlist:${queue.playlistId}`,
+            playlistId: queue.playlistId,
+            providerKind: "playlist",
+            providerId: queue.playlistId,
+          } as Track);
+        const resolved = resolvePlaylistTracks(dummyTrack, library.tracksRef.current);
+        return resolved.length > 0 ? resolved : library.tracksRef.current;
       }
       return library.tracksRef.current;
     },
@@ -451,14 +472,29 @@ export function useAudioLibrary() {
   // made these callbacks change identity ~3×/second during playback, which
   // defeated every memo() below and re-rendered the entire tree per tick.
   const selectTrack = useCallback(
-    async (trackId: string, autoplay = false) => {
-      const track = library.tracksRef.current.find(
+    async (trackId: string, autoplay = true) => {
+      let track = library.tracksRef.current.find(
         (item) => item.id === trackId,
       );
+      if (!track) {
+        const activeTrack = library.tracksRef.current.find(
+          (item) => item.id === currentIdRef.current,
+        );
+        const resolved = resolvePlaylistTracks(
+          activeTrack ?? null,
+          library.tracksRef.current,
+        );
+        track = resolved.find((item) => item.id === trackId);
+        if (track) {
+          const updated = [...library.tracksRef.current, track];
+          library.tracksRef.current = updated;
+          library.setTracks(updated);
+        }
+      }
       if (!track) return;
       await loadTrack(track, autoplay);
     },
-    [library.tracksRef, loadTrack],
+    [currentIdRef, library, loadTrack],
   );
 
   const togglePlay = useCallback(async () => {
@@ -661,6 +697,81 @@ export function useAudioLibrary() {
     void playNext(true);
   }, [playNext]);
 
+  const onRemoteTrackChange = useCallback(
+    (info: RemoteTrackInfo) => {
+      const list = library.tracksRef.current;
+      let target = list.find(
+        (t) =>
+          (info.videoId &&
+            (t.videoId === info.videoId || t.id === `youtube:${info.videoId}`)) ||
+          (info.uri &&
+            (t.id === info.uri ||
+              t.url?.includes(info.uri) ||
+              t.providerId === info.uri.split(":").pop())),
+      );
+
+      const activeTrack = list.find((t) => t.id === currentIdRef.current);
+      const playlistId =
+        activeTrack?.playlistId ||
+        (activeTrack?.providerKind === "playlist"
+          ? activeTrack.providerId
+          : undefined);
+
+      if (!target && playlistId) {
+        const resolved = resolvePlaylistTracks(activeTrack ?? null, list);
+        target = resolved.find(
+          (t) =>
+            (info.videoId &&
+              (t.videoId === info.videoId ||
+                t.id === `youtube:${info.videoId}`)) ||
+            (info.uri && (t.id === info.uri || t.url?.includes(info.uri))),
+        );
+        if (target && !list.some((t) => t.id === target!.id)) {
+          const updated = [...list, target];
+          library.tracksRef.current = updated;
+          library.setTracks(updated);
+        }
+      }
+
+      if (!target && info.videoId) {
+        const vid = info.videoId;
+        const title = info.title || `YouTube · ${vid}`;
+        const author = info.author || "YouTube";
+        const trackUrl = playlistId
+          ? `https://www.youtube.com/watch?v=${vid}&list=${playlistId}`
+          : `https://www.youtube.com/watch?v=${vid}`;
+        const dynamicTrack: Track = {
+          id: `youtube:${vid}`,
+          title,
+          filename: title,
+          path: trackUrl,
+          url: trackUrl,
+          videoId: vid,
+          playlistId,
+          playlistTitle: activeTrack?.playlistTitle || activeTrack?.title,
+          author,
+          thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+          source: "youtube",
+          extension: "youtube",
+          providerId: vid,
+          providerKind: "video",
+        };
+        target = dynamicTrack;
+        if (!list.some((t) => t.id === dynamicTrack.id)) {
+          const updated = [...list, dynamicTrack];
+          library.tracksRef.current = updated;
+          library.setTracks(updated);
+        }
+      }
+
+      if (target && target.id !== currentIdRef.current) {
+        currentIdRef.current = target.id;
+        setCurrentTrackId(target.id);
+      }
+    },
+    [currentIdRef, library, setCurrentTrackId],
+  );
+
   const currentPhase = useMemo(() => {
     if (timerSettings.kind !== "intervals") return undefined;
     const elapsedMs = elapsed * 1000;
@@ -794,6 +905,8 @@ export function useAudioLibrary() {
     addRemoteLink: library.addRemoteLink,
     importDroppedFiles: library.dropFiles,
     removeTrack: library.removeTrack,
+    moveTrackToProfile: library.moveTrackToProfile,
+    reorderTracks: library.reorderTracks,
     openMusicFolder: library.openMusicFolder,
     selectTrack,
     togglePlay,
@@ -814,6 +927,7 @@ export function useAudioLibrary() {
     onRemotePlaying: engine.onRemotePlaying,
     onRemoteEnded,
     onRemoteError: engine.onRemoteError,
+    onRemoteTrackChange,
     resetSession,
     updateTimerSettings,
     setTimerSettingsOpen,

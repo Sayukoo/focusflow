@@ -5,6 +5,12 @@ import {
   categorizeTrackWithStatus,
   generateMiniGoals,
   generateMiniGoalsDetailed,
+  getGeminiApiKey,
+  getStoredGeminiApiKey,
+  hasGeminiConfiguration,
+  saveStoredGeminiApiKey,
+  GEMINI_API_KEY_STORAGE_KEY,
+  GEMINI_KEY_CHANGED_EVENT,
 } from "./gemini";
 import type { Track } from "../types";
 
@@ -433,3 +439,56 @@ describe("Gemini track categories", () => {
     ).resolves.toBe("PHONK");
   });
 });
+
+describe("Gemini API key management", () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("returns empty string when no key is stored or in env", () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "");
+    expect(getStoredGeminiApiKey()).toBe("");
+    expect(getGeminiApiKey()).toBe("");
+    expect(hasGeminiConfiguration()).toBe(false);
+  });
+
+  it("stores and retrieves a key from localStorage", () => {
+    saveStoredGeminiApiKey("custom-user-key-123");
+    expect(getStoredGeminiApiKey()).toBe("custom-user-key-123");
+    expect(getGeminiApiKey()).toBe("custom-user-key-123");
+    expect(hasGeminiConfiguration()).toBe(true);
+    expect(localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)).toBe(
+      "custom-user-key-123",
+    );
+  });
+
+  it("stored key takes precedence over VITE_GEMINI_API_KEY", () => {
+    vi.stubEnv("VITE_GEMINI_API_KEY", "env-key");
+    expect(getGeminiApiKey()).toBe("env-key");
+
+    saveStoredGeminiApiKey("stored-key-overrides");
+    expect(getGeminiApiKey()).toBe("stored-key-overrides");
+  });
+
+  it("removes key from localStorage when saved with empty or whitespace string", () => {
+    saveStoredGeminiApiKey("my-key");
+    expect(getStoredGeminiApiKey()).toBe("my-key");
+
+    saveStoredGeminiApiKey("   ");
+    expect(getStoredGeminiApiKey()).toBe("");
+    expect(localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)).toBeNull();
+  });
+
+  it("dispatches GEMINI_KEY_CHANGED_EVENT when key is saved", () => {
+    const listener = vi.fn();
+    window.addEventListener(GEMINI_KEY_CHANGED_EVENT, listener);
+
+    saveStoredGeminiApiKey("new-key");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(GEMINI_KEY_CHANGED_EVENT, listener);
+  });
+});
+

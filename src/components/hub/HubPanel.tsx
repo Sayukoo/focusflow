@@ -1,4 +1,4 @@
-import { memo, type ReactElement } from "react";
+import { memo, useState, type ReactElement } from "react";
 import type { FocusAnalyticsStore } from "../../lib/analytics";
 import type { TrackCategory } from "../../lib/gemini";
 import type { MusicProfile } from "../../lib/profiles";
@@ -28,6 +28,8 @@ interface HubPanelProps {
   onRemoveTrack: (track: Track) => void;
   onToggleFavorite: (trackId: string) => void;
   onPlayQueue: (queue: PlaybackQueue, trackId: string | null) => void;
+  onReorderTracks?: (sourceIndex: number, destinationIndex: number) => void;
+  onMoveTrackToProfile?: (trackId: string, targetProfileId: string) => void;
   // Weekly focus statistics
   analyticsStore?: FocusAnalyticsStore;
   // Account & profiles
@@ -63,6 +65,8 @@ export const HubPanel = memo(function HubPanel({
   onRemoveTrack,
   onToggleFavorite,
   onPlayQueue,
+  onReorderTracks,
+  onMoveTrackToProfile,
   analyticsStore,
   profiles,
   activeProfileId,
@@ -70,6 +74,9 @@ export const HubPanel = memo(function HubPanel({
   onSelectProfile,
   onUserAboutMeChange,
 }: HubPanelProps): ReactElement | null {
+  const [isChillDropTarget, setIsChillDropTarget] = useState(false);
+  const [isEnergizingDropTarget, setIsEnergizingDropTarget] = useState(false);
+
   if (!open) return null;
 
   const escapedDir = musicDir.replace(/\\/g, "\\\\");
@@ -92,6 +99,72 @@ export const HubPanel = memo(function HubPanel({
       profiles.find((p) => p.theme === "energizing" && p.kind === "builtin") ??
       profiles.find((p) => p.theme === "energizing") ?? { id: "energizing" };
     void onSelectProfile(target.id);
+  };
+
+  const handleChillDragOver = (e: React.DragEvent) => {
+    if (
+      e.dataTransfer.types.includes("application/x-focusflow-track-id") ||
+      e.dataTransfer.types.includes("Files")
+    ) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (!isChillDropTarget) setIsChillDropTarget(true);
+    }
+  };
+
+  const handleChillDragLeave = (e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+    setIsChillDropTarget(false);
+  };
+
+  const handleChillDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsChillDropTarget(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleSelectFocus();
+      onDropFiles(Array.from(e.dataTransfer.files));
+      return;
+    }
+
+    const trackId = e.dataTransfer.getData("application/x-focusflow-track-id");
+    if (trackId && onMoveTrackToProfile) {
+      onMoveTrackToProfile(trackId, "deep-work");
+    }
+  };
+
+  const handleEnergizingDragOver = (e: React.DragEvent) => {
+    if (
+      e.dataTransfer.types.includes("application/x-focusflow-track-id") ||
+      e.dataTransfer.types.includes("Files")
+    ) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (!isEnergizingDropTarget) setIsEnergizingDropTarget(true);
+    }
+  };
+
+  const handleEnergizingDragLeave = (e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+    setIsEnergizingDropTarget(false);
+  };
+
+  const handleEnergizingDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsEnergizingDropTarget(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleSelectEnergizing();
+      onDropFiles(Array.from(e.dataTransfer.files));
+      return;
+    }
+
+    const trackId = e.dataTransfer.getData("application/x-focusflow-track-id");
+    if (trackId && onMoveTrackToProfile) {
+      onMoveTrackToProfile(trackId, "energizing");
+    }
   };
 
   return (
@@ -129,11 +202,15 @@ export const HubPanel = memo(function HubPanel({
               <KaTeXTooltip formula="\text{Kategoria: Chillowe (Lo-Fi, Ambient, Spokojna)}">
                 <button
                   type="button"
-                  className={`hub-mode-btn hub-mode-btn--focus ${!isEnergizing ? "is-active" : ""}`}
+                  className={`hub-mode-btn hub-mode-btn--focus ${!isEnergizing ? "is-active" : ""} ${isChillDropTarget ? "is-drop-target" : ""}`}
                   role="radio"
                   aria-checked={!isEnergizing}
                   aria-label="Kategoria Chillowe"
                   onClick={handleSelectFocus}
+                  onDragOver={handleChillDragOver}
+                  onDragEnter={handleChillDragOver}
+                  onDragLeave={handleChillDragLeave}
+                  onDrop={handleChillDrop}
                 >
                   <Icon name="target" size={15} />
                   <span>Chillowe</span>
@@ -142,11 +219,15 @@ export const HubPanel = memo(function HubPanel({
               <KaTeXTooltip formula="\text{Kategoria: Energetyczne (Phonk, Rave, Elektronika)}">
                 <button
                   type="button"
-                  className={`hub-mode-btn hub-mode-btn--energizing ${isEnergizing ? "is-active" : ""}`}
+                  className={`hub-mode-btn hub-mode-btn--energizing ${isEnergizing ? "is-active" : ""} ${isEnergizingDropTarget ? "is-drop-target" : ""}`}
                   role="radio"
                   aria-checked={isEnergizing}
                   aria-label="Kategoria Energetyczne"
                   onClick={handleSelectEnergizing}
+                  onDragOver={handleEnergizingDragOver}
+                  onDragEnter={handleEnergizingDragOver}
+                  onDragLeave={handleEnergizingDragLeave}
+                  onDrop={handleEnergizingDrop}
                 >
                   <Icon name="flame" size={15} />
                   <span>Energetyczne</span>
@@ -200,6 +281,8 @@ export const HubPanel = memo(function HubPanel({
               onRemove={onRemoveTrack}
               onToggleFavorite={onToggleFavorite}
               onPlayQueue={onPlayQueue}
+              onReorderTracks={onReorderTracks}
+              onMoveTrackToProfile={onMoveTrackToProfile}
             />
           </section>
 
@@ -236,6 +319,8 @@ export const HubPanel = memo(function HubPanel({
     previous.onRemoveTrack === next.onRemoveTrack &&
     previous.onToggleFavorite === next.onToggleFavorite &&
     previous.onPlayQueue === next.onPlayQueue &&
+    previous.onReorderTracks === next.onReorderTracks &&
+    previous.onMoveTrackToProfile === next.onMoveTrackToProfile &&
     previous.analyticsStore === next.analyticsStore &&
     previous.onSelectProfile === next.onSelectProfile &&
     previous.onCreateProfile === next.onCreateProfile &&

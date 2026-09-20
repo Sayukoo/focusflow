@@ -14,6 +14,9 @@ interface TrackMetaDisplayProps {
   favoriteBursting: boolean;
   categoryStatus: TrackCategoryStatus;
   currentCategory: TrackCategory | null;
+  hasPlaylist?: boolean;
+  playlistTrackCount?: number;
+  onOpenPlaylistModal?: () => void;
   onOpenHub: () => void;
   onToggleFavorite: (trackId: string) => void;
   onRequestCategory: (track: Track) => void;
@@ -27,6 +30,9 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
   favoriteBursting,
   categoryStatus,
   currentCategory,
+  hasPlaylist = false,
+  playlistTrackCount,
+  onOpenPlaylistModal,
   onOpenHub,
   onToggleFavorite,
   onRequestCategory,
@@ -77,7 +83,7 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
       categoryStatus === "missing-configuration" ||
       categoryStatus === "no-api-key"
     ) {
-      return "\\text{Add VITE\\_GEMINI\\_API\\_KEY to .env}";
+      return "\\text{Configure Gemini API key in settings}";
     }
     if (categoryStatus === "rate-limited") {
       return "\\text{Rate limited. Click to retry}";
@@ -144,6 +150,24 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
           <span className="now-sub">{sourceLabel}</span>
         </KaTeXTooltip>
         <div className="now-chips">
+          {hasPlaylist && onOpenPlaylistModal && (
+            <KaTeXTooltip formula="\\text{Zobacz listę utworów w tej playliście}">
+              <button
+                type="button"
+                className="chip chip--playlist"
+                aria-label="Pokaż utwory w tej playliście"
+                onClick={onOpenPlaylistModal}
+              >
+                <Icon name="music-queue" size={12} />
+                <span>
+                  Playlista
+                  {playlistTrackCount && playlistTrackCount > 1
+                    ? ` (${playlistTrackCount})`
+                    : ""}
+                </span>
+              </button>
+            </KaTeXTooltip>
+          )}
           <KaTeXTooltip formula={categoryTooltip}>
             {categoryNeedsAction ? (
               <button
@@ -159,6 +183,13 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
                 aria-busy={categoryLoading}
                 disabled={categoryLoading}
                 onClick={() => {
+                  if (
+                    categoryStatus === "missing-configuration" ||
+                    categoryStatus === "no-api-key"
+                  ) {
+                    onOpenHub();
+                    return;
+                  }
                   if (currentTrack) onRequestCategory(currentTrack);
                 }}
               >

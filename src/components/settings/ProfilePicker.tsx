@@ -2,6 +2,7 @@ import { memo, useState, type FormEvent } from "react";
 import type { MusicProfile } from "../../lib/profiles";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
+import { GeminiApiKeySection } from "./GeminiApiKeySection";
 
 export interface FocusAnalyticsSummary {
   todaySummary: string;
@@ -146,7 +147,8 @@ export const ProfilePicker = memo(function ProfilePicker({
 
       {!embedded ? (
         <div className="profile-about-me-section">
-          <div className="profile-about-me-header">
+          <GeminiApiKeySection />
+          <div className="profile-about-me-header" style={{ marginTop: "1rem" }}>
             <span className="profile-about-me-title">Informacje o mnie</span>
             <span className="profile-about-me-subtitle">Pamięć AI</span>
           </div>

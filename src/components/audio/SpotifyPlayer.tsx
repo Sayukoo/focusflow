@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Track } from "../../types";
+import type { RemoteTrackInfo, Track } from "../../types";
 
 interface SpotifyPlayerProps {
   track: Track | null;
@@ -11,6 +11,7 @@ interface SpotifyPlayerProps {
   onPlaying: (playing: boolean) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  onTrackChange?: (info: RemoteTrackInfo) => void;
 }
 
 interface SpotifyPlaybackEvent {
@@ -18,6 +19,7 @@ interface SpotifyPlaybackEvent {
     duration?: number;
     isPaused?: boolean;
     position?: number;
+    playingURI?: string;
   };
 }
 
@@ -62,10 +64,13 @@ export function SpotifyPlayer({
   onPlaying,
   onEnded,
   onError,
+  onTrackChange,
 }: SpotifyPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SpotifyEmbedController | null>(null);
   const lastSeekTokenRef = useRef<number | null>(null);
+  const lastPlayingUriRef = useRef<string | null>(null);
+  const currentLoadedUrlRef = useRef<string | null>(null);
   const playbackRef = useRef({ playing, volume });
   const callbacksRef = useRef({
     onDuration,
@@ -73,6 +78,7 @@ export function SpotifyPlayer({
     onError,
     onPlaying,
     onTime,
+    onTrackChange,
   });
 
   playbackRef.current = { playing, volume };
@@ -82,11 +88,23 @@ export function SpotifyPlayer({
     onError,
     onPlaying,
     onTime,
+    onTrackChange,
   };
 
   useEffect(() => {
     if (!track?.url || !hostRef.current) {
       controllerRef.current = null;
+      currentLoadedUrlRef.current = null;
+      return;
+    }
+
+    // If already playing this embed or playlist, don't recreate the iframe
+    if (
+      controllerRef.current &&
+      (currentLoadedUrlRef.current === track.url ||
+        (lastPlayingUriRef.current &&
+          track.url.includes(lastPlayingUriRef.current.split(":").pop() ?? "")))
+    ) {
       return;
     }
 
@@ -95,6 +113,7 @@ export function SpotifyPlayer({
     host.replaceChildren();
     controllerRef.current = null;
     lastSeekTokenRef.current = null;
+    currentLoadedUrlRef.current = track.url;
     const embedHeight =
       track.providerKind === "playlist" || track.providerKind === "album"
         ? 352
@@ -127,6 +146,16 @@ export function SpotifyPlayer({
               if (typeof data.isPaused === "boolean") {
                 callbacksRef.current.onPlaying(!data.isPaused);
               }
+
+              if (
+                data.playingURI &&
+                data.playingURI !== lastPlayingUriRef.current
+              ) {
+                lastPlayingUriRef.current = data.playingURI;
+                callbacksRef.current.onTrackChange?.({
+                  uri: data.playingURI,
+                });
+              }
             });
 
             if (playbackRef.current.playing) {
@@ -150,6 +179,7 @@ export function SpotifyPlayer({
     return () => {
       disposed = true;
       controllerRef.current = null;
+      currentLoadedUrlRef.current = null;
       host.replaceChildren();
     };
   }, [track?.id]);

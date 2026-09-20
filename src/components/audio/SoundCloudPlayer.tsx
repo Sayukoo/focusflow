@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Track } from "../../types";
+import type { RemoteTrackInfo, Track } from "../../types";
 
 interface SoundCloudPlayerProps {
   track: Track | null;
@@ -11,6 +11,7 @@ interface SoundCloudPlayerProps {
   onPlaying: (playing: boolean) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  onTrackChange?: (info: RemoteTrackInfo) => void;
 }
 
 interface SoundCloudProgressEvent {

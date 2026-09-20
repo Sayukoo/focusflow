@@ -102,4 +102,31 @@ describe("HubPanel", () => {
     fireEvent.click(energeticBtn);
     expect(onSelectProfile).toHaveBeenCalledWith("energizing");
   });
+
+  it("moves track to category when track is dropped on category button", () => {
+    const onMoveTrackToProfile = vi.fn();
+    render(
+      <HubPanel
+        {...createProps()}
+        onMoveTrackToProfile={onMoveTrackToProfile}
+      />,
+    );
+
+    const energeticBtn = screen.getByRole("radio", {
+      name: "Kategoria Energetyczne",
+    });
+
+    const dataTransfer = {
+      types: ["application/x-focusflow-track-id"],
+      getData: (type: string) =>
+        type === "application/x-focusflow-track-id" ? "track-1" : "",
+    };
+
+    fireEvent.dragOver(energeticBtn, { dataTransfer });
+    expect(energeticBtn).toHaveClass("is-drop-target");
+
+    fireEvent.drop(energeticBtn, { dataTransfer });
+    expect(energeticBtn).not.toHaveClass("is-drop-target");
+    expect(onMoveTrackToProfile).toHaveBeenCalledWith("track-1", "energizing");
+  });
 });

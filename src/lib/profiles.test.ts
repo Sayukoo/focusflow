@@ -8,7 +8,9 @@ import {
   getProfileTrackIds,
   isTrackSharedWithAnotherProfile,
   loadProfileStore,
+  moveTrackToProfile,
   reconcileProfileTracks,
+  reorderProfileTracks,
   saveProfileStore,
   setActiveProfile,
   toggleProfileFavorite,
@@ -169,4 +171,114 @@ describe("profile storage", () => {
     expect(isEnergeticTrack(lofiTrack)).toBe(false);
     expect(isChillTrack(lofiTrack)).toBe(true);
   });
+
+  it("classifies Zdechły Osa, Limp Bizkit and Miękki Biszkopt as energetic and never chill", async () => {
+    const { isEnergeticTrack, isChillTrack } = await import("./defaultTracks");
+
+    const zdechlyOsaTrack: Track = {
+      id: "youtube:osa-1",
+      title: "Zdechły Osa - Patolove",
+      filename: "patolove.mp3",
+      path: "https://youtube.com/watch?v=osa-1",
+      extension: "youtube",
+      source: "youtube",
+    };
+
+    const limpBizkitTrack: Track = {
+      id: "youtube:lb-1",
+      title: "Limp Bizkit - Break Stuff",
+      filename: "break-stuff.mp3",
+      path: "https://youtube.com/watch?v=lb-1",
+      extension: "youtube",
+      source: "youtube",
+    };
+
+    const miekkiBiszkoptTrack: Track = {
+      id: "youtube:mb-1",
+      title: "Miękki Biszkopt - Rollin",
+      filename: "rollin.mp3",
+      path: "https://youtube.com/watch?v=mb-1",
+      extension: "youtube",
+      source: "youtube",
+    };
+
+    const punkTrack: Track = {
+      id: "youtube:punk-1",
+      title: "Dezerter - Ku Przyszłości",
+      filename: "dezerter.mp3",
+      path: "https://youtube.com/watch?v=punk-1",
+      extension: "youtube",
+      source: "youtube",
+      category: "PUNK",
+    };
+
+    const neutralTrack: Track = {
+      id: "file:podcast-1",
+      title: "Episode 42: History Talk",
+      filename: "ep42.mp3",
+      path: "C:\\podcast\\ep42.mp3",
+      extension: "mp3",
+    };
+
+    // All energetic tracks must be identified as energetic
+    expect(isEnergeticTrack(zdechlyOsaTrack)).toBe(true);
+    expect(isChillTrack(zdechlyOsaTrack)).toBe(false);
+
+    expect(isEnergeticTrack(limpBizkitTrack)).toBe(true);
+    expect(isChillTrack(limpBizkitTrack)).toBe(false);
+
+    expect(isEnergeticTrack(miekkiBiszkoptTrack)).toBe(true);
+    expect(isChillTrack(miekkiBiszkoptTrack)).toBe(false);
+
+    expect(isEnergeticTrack(punkTrack)).toBe(true);
+    expect(isChillTrack(punkTrack)).toBe(false);
+
+    // Neutral track should not blindly default to chill
+    expect(isChillTrack(neutralTrack)).toBe(false);
+    expect(isEnergeticTrack(neutralTrack)).toBe(false);
+  });
+
+  it("moves track to target profile, purges from other profiles, and persists override", () => {
+    const store = createDefaultProfileStore();
+    store.trackIdsByProfile["deep-work"] = ["track-1", "track-2"];
+    store.trackIdsByProfile["energizing"] = ["track-3"];
+
+    const moved = moveTrackToProfile(store, "track-1", "energizing");
+
+    expect(getProfileTrackIds(moved, "deep-work")).toEqual(["track-2"]);
+    expect(getProfileTrackIds(moved, "energizing")).toEqual(["track-3", "track-1"]);
+    expect(moved.userProfileOverrides?.["track-1"]).toBe("energizing");
+
+    // Reconcile must respect the user's manual override even if default heuristic says deep-work
+    const reconciled = reconcileProfileTracks(
+      moved,
+      ["track-1", "track-2", "track-3"],
+      { "track-1": "deep-work", "track-2": "deep-work", "track-3": "energizing" },
+    );
+
+    expect(getProfileTrackIds(reconciled, "deep-work")).toEqual(["track-2"]);
+    expect(getProfileTrackIds(reconciled, "energizing")).toEqual(["track-3", "track-1"]);
+  });
+
+  it("reorders tracks within a profile", () => {
+    const store = createDefaultProfileStore();
+    store.trackIdsByProfile["deep-work"] = ["track-a", "track-b", "track-c"];
+
+    // Move track-c to the top (index 2 to index 0)
+    const reordered = reorderProfileTracks(store, "deep-work", 2, 0);
+    expect(getProfileTrackIds(reordered, "deep-work")).toEqual([
+      "track-c",
+      "track-a",
+      "track-b",
+    ]);
+
+    // Move track-c down (index 0 to index 1)
+    const reordered2 = reorderProfileTracks(reordered, "deep-work", 0, 1);
+    expect(getProfileTrackIds(reordered2, "deep-work")).toEqual([
+      "track-a",
+      "track-c",
+      "track-b",
+    ]);
+  });
 });
+

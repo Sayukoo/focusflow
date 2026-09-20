@@ -100,6 +100,11 @@ function App() {
     (message: string) => player.onRemoteError(message),
     [player.onRemoteError],
   );
+  const handleRemoteTrackChange = useCallback(
+    (info: Parameters<typeof player.onRemoteTrackChange>[0]) =>
+      player.onRemoteTrackChange(info),
+    [player.onRemoteTrackChange],
+  );
   const handleRefresh = useCallback(() => {
     void player.refresh().catch((error: unknown) => {
       player.setError(error instanceof Error ? error.message : String(error));
@@ -177,6 +182,16 @@ function App() {
     () => player.toggleVolumeNormalization(),
     [player.toggleVolumeNormalization],
   );
+  const handleReorderTracks = useCallback(
+    (sourceIndex: number, destinationIndex: number) =>
+      player.reorderTracks(sourceIndex, destinationIndex),
+    [player.reorderTracks],
+  );
+  const handleMoveTrackToProfile = useCallback(
+    (trackId: string, targetProfileId: string) =>
+      void player.moveTrackToProfile(trackId, targetProfileId),
+    [player.moveTrackToProfile],
+  );
 
   if (!player.ready) {
     return (
@@ -228,6 +243,7 @@ function App() {
       onRemotePlaying={handleRemotePlaying}
       onRemoteEnded={handleRemoteEnded}
       onRemoteError={handleRemoteError}
+      onRemoteTrackChange={handleRemoteTrackChange}
       onRefresh={handleRefresh}
       onOpenFolder={handleOpenFolder}
       onSelectTrack={handleSelectTrack}
@@ -249,6 +265,8 @@ function App() {
       onTimerSettingsChange={handleTimerSettingsChange}
       onClearError={handleClearError}
       onSetWindowPinned={handleSetWindowPinned}
+      onReorderTracks={handleReorderTracks}
+      onMoveTrackToProfile={handleMoveTrackToProfile}
     />
   );
 }

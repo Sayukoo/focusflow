@@ -12,6 +12,7 @@ export interface Track {
   url?: string;
   videoId?: string;
   playlistId?: string;
+  playlistTitle?: string;
   providerId?: string;
   providerKind?: string;
   thumbnail?: string;
@@ -43,7 +44,18 @@ export type PlaybackQueue =
   | { kind: "all" }
   | { kind: "favorites" }
   | { kind: "recent" }
-  | { kind: "genre"; category: string | null };
+  | { kind: "genre"; category: string | null }
+  | { kind: "playlist"; playlistId: string };
+
+export interface RemoteTrackInfo {
+  videoId?: string;
+  uri?: string;
+  title?: string;
+  author?: string;
+  thumbnail?: string;
+  index?: number;
+}
+
 
 export const INTERVAL_WORK_PRESETS = [25, 30, 40, 50, 60] as const;
 export const INTERVAL_BREAK_PRESETS = [5, 10, 15, 20, 25] as const;

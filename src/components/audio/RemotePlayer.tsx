@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import type { Track } from "../../types";
+import type { RemoteTrackInfo, Track } from "../../types";
 import { Icon } from "../ui/Icon";
 import { SoundCloudPlayer } from "./SoundCloudPlayer";
 import { SpotifyPlayer } from "./SpotifyPlayer";
@@ -17,6 +17,7 @@ export interface RemotePlayerProps {
   onPlaying: (playing: boolean) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  onTrackChange?: (info: RemoteTrackInfo) => void;
 }
 
 /** Tracks browser/WebView connectivity so remote embeds can warn offline. */

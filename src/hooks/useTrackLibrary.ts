@@ -24,9 +24,11 @@ import {
   assignTracksToProfile,
   getProfileTrackIds,
   isTrackSharedWithAnotherProfile,
+  moveTrackToProfile as moveTrackToProfileStore,
   reconcileProfileTracks,
   removeTracksFromProfile,
   removeTracksFromProfiles,
+  reorderProfileTracks as reorderProfileTracksStore,
   type ProfileStore,
 } from "../lib/profiles";
 import type { Track } from "../types";
@@ -88,10 +90,29 @@ export function useTrackLibrary({
 
   const filterTracksForProfile = useCallback(
     (allTracks: Track[], profileId = activeProfileIdRef.current) => {
-      const profileTrackIds = new Set(
-        getProfileTrackIds(profileStoreRef.current, profileId),
-      );
-      return allTracks.filter((track) => profileTrackIds.has(track.id));
+      const orderedIds = getProfileTrackIds(profileStoreRef.current, profileId);
+      const profileTrackIds = new Set(orderedIds);
+      const trackMap = new Map(allTracks.map((track) => [track.id, track]));
+      const orderedTracks: Track[] = [];
+
+      for (const id of orderedIds) {
+        const track = trackMap.get(id);
+        if (track) {
+          orderedTracks.push(track);
+        }
+      }
+
+      // Safety fallback: append any tracks assigned to profile that were not in orderedIds
+      for (const track of allTracks) {
+        if (
+          profileTrackIds.has(track.id) &&
+          !orderedTracks.some((t) => t.id === track.id)
+        ) {
+          orderedTracks.push(track);
+        }
+      }
+
+      return orderedTracks;
     },
     [activeProfileIdRef, profileStoreRef],
   );
@@ -561,6 +582,53 @@ export function useTrackLibrary({
     [activeProfileIdRef, commitProfileStore, profileStoreRef, refresh, runningInTauri],
   );
 
+  const moveTrackToProfile = useCallback(
+    async (trackId: string, targetProfileId: string) => {
+      const nextStore = moveTrackToProfileStore(
+        profileStoreRef.current,
+        trackId,
+        targetProfileId,
+      );
+      commitProfileStore(nextStore);
+      const allTracks = await getAllCurrentTracks();
+      const listed = filterTracksForProfile(allTracks);
+      tracksRef.current = listed;
+      setTracks(listed);
+      return listed;
+    },
+    [commitProfileStore, filterTracksForProfile, getAllCurrentTracks, profileStoreRef],
+  );
+
+  const reorderTracks = useCallback(
+    (sourceIndex: number, destinationIndex: number) => {
+      const activeProfileId = activeProfileIdRef.current;
+      const nextStore = reorderProfileTracksStore(
+        profileStoreRef.current,
+        activeProfileId,
+        sourceIndex,
+        destinationIndex,
+      );
+      commitProfileStore(nextStore);
+      setTracks((prev) => {
+        const next = [...prev];
+        if (
+          sourceIndex < 0 ||
+          sourceIndex >= next.length ||
+          destinationIndex < 0 ||
+          destinationIndex >= next.length ||
+          sourceIndex === destinationIndex
+        ) {
+          return prev;
+        }
+        const [moved] = next.splice(sourceIndex, 1);
+        next.splice(destinationIndex, 0, moved);
+        tracksRef.current = next;
+        return next;
+      });
+    },
+    [activeProfileIdRef, commitProfileStore, profileStoreRef],
+  );
+
   return {
     tracks,
     setTracks,
@@ -583,5 +651,7 @@ export function useTrackLibrary({
     dropFiles,
     openMusicFolder,
     removeTrack,
+    moveTrackToProfile,
+    reorderTracks,
   };
 }

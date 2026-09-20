@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIdleDetection } from "../../hooks/useIdleDetection";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import type { FocusAnalyticsStore } from "../../lib/analytics";
-import { isRemoteTrack, isTauriRuntime } from "../../lib/audio";
+import { isRemoteTrack, isTauriRuntime, resolvePlaylistTracks } from "../../lib/audio";
 import {
   categorizeTrackWithStatus,
   getTrackCategory,
@@ -15,6 +15,7 @@ import {
   type FocusMode,
   type MiniGoal,
   type PlaybackQueue,
+  type RemoteTrackInfo,
   type TimerPhase,
   type TimerSettings,
   type Track,
@@ -34,6 +35,7 @@ import { HeaderControls } from "./HeaderControls";
 import { ThumbnailBackground } from "./ThumbnailBackground";
 import { ConfettiOverlay } from "./ConfettiOverlay";
 import { TrackMetaDisplay } from "./TrackMetaDisplay";
+import { PlaylistTracksModal } from "./PlaylistTracksModal";
 
 interface FocusPlayerProps {
   tracks: Track[];
@@ -91,6 +93,7 @@ interface FocusPlayerProps {
   onRemoteDuration: (duration: number) => void;
   onRemoteEnded: () => void;
   onRemoteError: (message: string) => void;
+  onRemoteTrackChange?: (info: RemoteTrackInfo) => void;
   remoteSeekRequest: { value: number; token: number } | null;
   onOpenTimerSettings: (focus?: "goal" | "subtask") => void;
   onCloseTimerSettings: () => void;
@@ -99,6 +102,8 @@ interface FocusPlayerProps {
   onClearError?: () => void;
   onPlayQueue: (queue: PlaybackQueue, trackId: string | null) => void;
   onSetWindowPinned: (pinned: boolean) => void | Promise<void>;
+  onReorderTracks?: (sourceIndex: number, destinationIndex: number) => void;
+  onMoveTrackToProfile?: (trackId: string, targetProfileId: string) => void;
 }
 
 const CONFETTI_TAP_COUNT = 15;
@@ -151,13 +156,17 @@ export function FocusPlayer({
   onRemoteDuration,
   onRemoteEnded,
   onRemoteError,
+  onRemoteTrackChange,
   remoteSeekRequest,
   onOpenTimerSettings,
   onCloseTimerSettings,
   onTimerSettingsChange,
   onChangeTimerSettings,
   onClearError,
+  onPlayQueue,
   onSetWindowPinned,
+  onReorderTracks,
+  onMoveTrackToProfile,
   musicDir,
   currentTrackId,
   busy = false,
@@ -167,11 +176,25 @@ export function FocusPlayer({
   onOpenFolder,
   onSelectTrack,
   onRemoveTrack,
-  onPlayQueue,
 }: FocusPlayerProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hotkeysModalOpen, setHotkeysModalOpen] = useState(false);
+  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const uiIdle = useIdleDetection(UI_IDLE_DELAY_MS);
+
+  const currentPlaylistTracks = useMemo(() => {
+    return resolvePlaylistTracks(currentTrack, tracks);
+  }, [currentTrack, tracks]);
+
+  const hasCurrentPlaylist = useMemo(() => {
+    return Boolean(
+      currentTrack &&
+        (currentTrack.playlistId ||
+          currentTrack.providerKind === "playlist" ||
+          currentTrack.providerKind === "album" ||
+          currentPlaylistTracks.length > 1),
+    );
+  }, [currentPlaylistTracks.length, currentTrack]);
 
   useKeyboardShortcuts({
     onTogglePlay: () => void onTogglePlay(),
@@ -443,7 +466,7 @@ export function FocusPlayer({
   // every playback progress tick.
   const handleHubSelectTrack = useCallback(
     (trackId: string) => {
-      void onSelectTrack(trackId, false);
+      void onSelectTrack(trackId, true);
     },
     [onSelectTrack],
   );
@@ -677,6 +700,9 @@ export function FocusPlayer({
           favoriteBursting={favoriteBursting}
           categoryStatus={categoryStatus}
           currentCategory={currentCategory}
+          hasPlaylist={hasCurrentPlaylist}
+          playlistTrackCount={currentPlaylistTracks.length}
+          onOpenPlaylistModal={() => setPlaylistModalOpen(true)}
           onOpenHub={onOpenHub}
           onToggleFavorite={onToggleFavorite}
           onRequestCategory={handleRequestCategory}
@@ -698,18 +724,30 @@ export function FocusPlayer({
 
         <div className="focus-controls focus-stats">
           {onToggleVolumeNormalization ? (
-            <button
-              type="button"
-              className={
-                volumeNormalization ? "norm-toggle is-active" : "norm-toggle"
-              }
-              aria-pressed={Boolean(volumeNormalization)}
-              aria-label="Normalizacja głośności"
-              title="Normalizacja głośności"
-              onClick={onToggleVolumeNormalization}
+            <KaTeXTooltip
+              formula={`\\text{Normalizacja: ${volumeNormalization ? "Włączona (Wyrównana)" : "Wyłączona (Pełny bas & dynamika)"}}`}
             >
-              <Icon name="gauge" size={17} />
-            </button>
+              <button
+                type="button"
+                className={
+                  volumeNormalization ? "norm-toggle is-active" : "norm-toggle"
+                }
+                aria-pressed={Boolean(volumeNormalization)}
+                aria-label={
+                  volumeNormalization
+                    ? "Normalizacja głośności włączona"
+                    : "Normalizacja głośności wyłączona (pełna dynamika i bas)"
+                }
+                title={
+                  volumeNormalization
+                    ? "Normalizacja głośności: Włączona"
+                    : "Normalizacja głośności: Wyłączona (pełny bas i dynamika)"
+                }
+                onClick={onToggleVolumeNormalization}
+              >
+                <Icon name="gauge" size={17} />
+              </button>
+            </KaTeXTooltip>
           ) : null}
           <KaTeXTooltip formula={`\\text{Volume: ${Math.round(volume * 100)}\\%}`}>
             <div className="volume" aria-label="Volume strip">
@@ -741,6 +779,7 @@ export function FocusPlayer({
           onDuration={onRemoteDuration}
           onEnded={onRemoteEnded}
           onError={onRemoteError}
+          onTrackChange={onRemoteTrackChange}
         />
       ) : null}
 
@@ -763,6 +802,8 @@ export function FocusPlayer({
         onRemoveTrack={onRemoveTrack}
         onToggleFavorite={onToggleFavorite}
         onPlayQueue={onPlayQueue}
+        onReorderTracks={onReorderTracks}
+        onMoveTrackToProfile={onMoveTrackToProfile}
         profiles={profiles}
         activeProfileId={activeProfileId}
         analyticsStore={analyticsStore}
@@ -787,6 +828,22 @@ export function FocusPlayer({
       <KeyboardShortcutsModal
         open={hotkeysModalOpen}
         onClose={() => setHotkeysModalOpen(false)}
+      />
+
+      <PlaylistTracksModal
+        open={playlistModalOpen}
+        onClose={() => setPlaylistModalOpen(false)}
+        playlistTitle={
+          currentTrack?.playlistTitle ||
+          (currentTrack?.providerKind === "playlist"
+            ? currentTrack.title
+            : undefined)
+        }
+        tracks={currentPlaylistTracks}
+        currentTrackId={currentTrackId}
+        onSelectTrack={onSelectTrack}
+        favoriteTrackIds={favoriteTrackIds}
+        onToggleFavorite={onToggleFavorite}
       />
 
       {error ? (

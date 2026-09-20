@@ -12,10 +12,10 @@ const MANUAL_FADE_MS = 450;
 const AUTO_FADE_MS = AUTO_CROSSFADE_SECONDS * 1000;
 
 /* Loudness normalization constants (Web Audio offline analysis). */
-const TARGET_RMS = 0.11;
-const GAIN_FLOOR = 0.55;
-const GAIN_CEIL = 1.75;
-const PEAK_CEIL = 0.97;
+const TARGET_RMS = 0.16;
+const GAIN_FLOOR = 0.75;
+const GAIN_CEIL = 1.6;
+const PEAK_CEIL = 0.98;
 const ANALYSIS_MAX_BYTES = 12 * 1024 * 1024;
 const ANALYSIS_MAX_SECONDS = 90;
 const GAIN_CACHE_KEY = "focusflow.track-gains";
@@ -126,14 +126,14 @@ export function useAudioPlaybackEngine({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentIdRef = useRef<string | null>(null);
   const playingRef = useRef(false);
-  const volumeRef = useRef(0.72);
+  const volumeRef = useRef(1.0);
   const playbackRateRef = useRef(1.0);
   const loadRequestRef = useRef(0);
   const lastRenderedProgressRef = useRef(0);
 
   const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolumeState] = useState(0.72);
+  const [volume, setVolumeState] = useState(1.0);
   const [playbackRate, setPlaybackRateState] = useState(1.0);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);

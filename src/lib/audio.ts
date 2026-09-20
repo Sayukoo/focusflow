@@ -695,6 +695,17 @@ export async function fetchYouTubePlaylistTracks(
       }
     }
 
+    let playlistTitle: string | undefined;
+    const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+    if (ogMatch && ogMatch[1]) {
+      playlistTitle = ogMatch[1].replace(/ - YouTube$/i, "").trim();
+    } else {
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+      if (titleMatch && titleMatch[1]) {
+        playlistTitle = titleMatch[1].replace(/ - YouTube$/i, "").trim();
+      }
+    }
+
     return items.map((item) => {
       const trackUrl = `https://www.youtube.com/watch?v=${item.videoId}&list=${playlistId}`;
       return {
@@ -707,6 +718,7 @@ export async function fetchYouTubePlaylistTracks(
         url: trackUrl,
         videoId: item.videoId,
         playlistId,
+        playlistTitle,
         providerId: item.videoId,
         providerKind: "video",
         thumbnail: item.thumbnail || youtubeThumbnail(item.videoId),
@@ -776,6 +788,8 @@ export async function fetchSpotifyPlaylistTracks(
 
     if (!entity) return [];
     const trackList = entity.trackList || entity.tracks || [];
+    const playlistTitle = entity.title || entity.name || undefined;
+    const playlistId = _link.providerId;
 
     return trackList.map((t) => {
       const spotifyId = t.uri
@@ -797,6 +811,8 @@ export async function fetchSpotifyPlaylistTracks(
         extension: "spotify",
         source: "spotify" as const,
         url: trackUrl,
+        playlistId,
+        playlistTitle,
         providerId: spotifyId,
         providerKind: "track",
         author,
@@ -807,20 +823,75 @@ export async function fetchSpotifyPlaylistTracks(
   }
 }
 
+const PLAYLIST_CACHE_KEY_PREFIX = "focusflow.playlist-tracks";
+
+export function loadCachedPlaylistTracks(playlistId: string): Track[] {
+  try {
+    const raw = localStorage.getItem(`${PLAYLIST_CACHE_KEY_PREFIX}.${playlistId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Track[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCachedPlaylistTracks(
+  playlistId: string,
+  tracks: Track[],
+): void {
+  try {
+    localStorage.setItem(
+      `${PLAYLIST_CACHE_KEY_PREFIX}.${playlistId}`,
+      JSON.stringify(tracks),
+    );
+  } catch {
+    // Ignore storage policy limitations
+  }
+}
+
+export function resolvePlaylistTracks(
+  track: Track | null,
+  allTracks: Track[],
+): Track[] {
+  if (!track) return [];
+  const playlistId =
+    track.playlistId ||
+    (track.providerKind === "playlist" || track.providerKind === "album"
+      ? track.providerId
+      : undefined);
+  if (!playlistId) return [track];
+
+  const inLibrary = allTracks.filter(
+    (t) =>
+      t.playlistId === playlistId ||
+      (track.providerKind === "playlist" && t.playlistId === track.providerId),
+  );
+  if (inLibrary.length > 0) return inLibrary;
+
+  const cached = loadCachedPlaylistTracks(playlistId);
+  if (cached.length > 0) return cached;
+
+  return [track];
+}
+
 export async function fetchRemotePlaylistTracks(
   url: string,
   link: ParsedRemoteLink,
 ): Promise<Track[]> {
+  let tracks: Track[] = [];
   if (link.provider === "youtube" && link.providerKind === "playlist") {
-    return fetchYouTubePlaylistTracks(link.providerId);
-  }
-  if (
+    tracks = await fetchYouTubePlaylistTracks(link.providerId);
+  } else if (
     link.provider === "spotify" &&
     (link.providerKind === "playlist" || link.providerKind === "album")
   ) {
-    return fetchSpotifyPlaylistTracks(url, link);
+    tracks = await fetchSpotifyPlaylistTracks(url, link);
   }
-  return [];
+  if (tracks.length > 0 && link.providerId) {
+    saveCachedPlaylistTracks(link.providerId, tracks);
+  }
+  return tracks;
 }
 
 export function loadRemoteTracks(): Track[] {

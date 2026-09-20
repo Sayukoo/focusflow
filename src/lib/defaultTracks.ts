@@ -116,15 +116,60 @@ export const DEFAULT_PHONK_TRACK_IDS: string[] = DEFAULT_PHONK_TRACKS.map(
 const PHONK_IDS_SET = new Set(DEFAULT_PHONK_TRACK_IDS);
 const LOFI_IDS_SET = new Set(DEFAULT_LOFI_TRACK_IDS);
 
+export function normalizeMusicSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ł/g, "l")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const ENERGETIC_CATEGORIES = new Set([
+  "PHONK",
+  "ROCK",
+  "METAL",
+  "PUNK",
+  "HIPHOP",
+  "RAP",
+  "ENERGETIC",
+]);
+
+const ENERGETIC_ARTISTS_REGEX =
+  /\b(zdechly\s*osa|zdechlyosa|limp\s*bizkit|limpbizkit|miekki\s*biszkopt|fred\s*durst|slipknot|rammstein|linkin\s*park|korn|system\s*of\s*a\s*down|soad|deftones|papa\s*roach|rage\s*against\s*the\s*machine|ratm|disturbed|marilyn\s*manson|avenged\s*sevenfold|a7x|bring\s*me\s*the\s*horizon|bmth|architects|nirvana|metallica|iron\s*maiden|ac\s*\/?\s*dc|green\s*day|blink\s*182|the\s*offspring|sum\s*41|prodigy|the\s*prodigy|pendulum|chase\s*(and|&)\s*status|skrillex|kordhell|dxrk|dvrst|interworld|playaphonk|kaito\s*shoma|memphis\s*cult|ghostemane|scarlxrd|suicideboys|pouya|bones|slon|wsrh|szpaku|oki|otsochodzi|young\s*multi|malik\s*montana|zabson|bedoes|white\s*2115|mata|kizo|pro8l3m|peja|slums\s*attack|hemp\s*gru|wwo|sokol|paluch|kali|keke|reto|guzior|kukon|gibbs|ronnie\s*ferrari|nocny\s*kochanek|hunter|behemoth|vader|decapitated|tsa|kat|illusion|sweet\s*noise|acid\s*drinkers|luxtorpeda|pidzama\s*porno|dezerter|ksu|farben\s*lehre|proletaryat|armia|siekiera|sedes|defekt\s*muzgo)\b/i;
+
+const ENERGETIC_KEYWORDS_REGEX =
+  /\b(phonk|rave|drift|hardstyle|gym|workout|bass|trap|metal|rock|hyperpop|nightcore|dnb|drum\s*and\s*bass|drum\s*bass|dubstep|electro|electronic\s*rock|energetic|energy|intense|pump|punk|nu\s*metal|numetal|rapcore|hardcore|post\s*hardcore|deathcore|metalcore|heavy\s*metal|thrash|grunge|screamo|drill|bassboost|bass\s*boost|speedup|speed\s*up|techno|gabber|breakcore|jumpstyle|edm|industrial|aggressive|rage|hype|banger|party|club|power|fast|dynamic|upbeat|moshpit|pogo|rap|hip\s*hop|hiphop|distort)\b/i;
+
+const CHILL_CATEGORIES = new Set([
+  "LOFI",
+  "AMBIENT",
+  "CLASSICAL",
+  "JAZZ",
+  "NATURE",
+  "SLEEP",
+  "FOCUS",
+]);
+
+const CHILL_KEYWORDS_REGEX =
+  /\b(lofi|lo\s*fi|chill|chillhop|chillout|ambient|relax|calm|peaceful|meditation|sleep|sleeping|nature|soft|acoustic|piano|slowed|reverb|rain|waves|breeze|coffee|cozy|study|studying|focus|calm\s*piano|meditative|soothing|zen|mellow|downtempo)\b/i;
+
+const CHILL_ARTISTS_REGEX =
+  /\b(purrple\s*cat|idealism|jinsang|kupla|l\s*indecis|lindecis|aso|aviino|devin\s*kroes|potsu|mondo\s*loops|swum|sworn|psalm\s*trees|no\s*spirit|ward\s*wills|fantompower|mama\s*aiuto|evil\s*needle|lloom|dryhope|felty|hanz)\b/i;
+
 export function isPhonkTrack(track: Track): boolean {
   if (PHONK_IDS_SET.has(track.id)) return true;
   const category = (track.category ?? "").toUpperCase();
   if (category === "PHONK") return true;
-  const text = `${track.title} ${track.filename} ${track.author ?? ""}`.toLowerCase();
+  const normalized = normalizeMusicSearchText(
+    `${track.title} ${track.filename} ${track.author ?? ""}`,
+  );
   return (
-    text.includes("phonk") ||
+    normalized.includes("phonk") ||
     /\b(kordhell|dxrk|dvrst|interworld|playaphonk|kaito\s*shoma|memphis\s*cult)\b/i.test(
-      text,
+      normalized,
     )
   );
 }
@@ -132,15 +177,12 @@ export function isPhonkTrack(track: Track): boolean {
 export function isEnergeticTrack(track: Track): boolean {
   if (isPhonkTrack(track)) return true;
   const category = (track.category ?? "").toUpperCase();
-  if (category === "PHONK") return true;
-  const text = `${track.title} ${track.filename} ${track.author ?? ""}`.toLowerCase();
-  if (
-    /\b(phonk|rave|drift|hardstyle|gym|workout|bass|trap|metal|rock|hyperpop|nightcore|dnb|drum\s*and\s*bass|dubstep|electro|energetic|energy|intense|pump)\b/i.test(
-      text,
-    )
-  ) {
-    return true;
-  }
+  if (ENERGETIC_CATEGORIES.has(category)) return true;
+  const normalized = normalizeMusicSearchText(
+    `${track.title} ${track.filename} ${track.author ?? ""}`,
+  );
+  if (ENERGETIC_ARTISTS_REGEX.test(normalized)) return true;
+  if (ENERGETIC_KEYWORDS_REGEX.test(normalized)) return true;
   return false;
 }
 
@@ -148,17 +190,16 @@ export function isChillTrack(track: Track): boolean {
   if (LOFI_IDS_SET.has(track.id)) return true;
   // If it's energetic or phonk, it can NEVER be chill!
   if (isEnergeticTrack(track)) return false;
+
   const category = (track.category ?? "").toUpperCase();
-  if (
-    category === "LOFI" ||
-    category === "AMBIENT" ||
-    category === "CLASSICAL" ||
-    category === "JAZZ" ||
-    category === "NATURE" ||
-    category === "SLEEP" ||
-    category === "FOCUS"
-  ) {
-    return true;
-  }
-  return true;
+  if (CHILL_CATEGORIES.has(category)) return true;
+
+  const normalized = normalizeMusicSearchText(
+    `${track.title} ${track.filename} ${track.author ?? ""}`,
+  );
+  if (CHILL_ARTISTS_REGEX.test(normalized)) return true;
+  if (CHILL_KEYWORDS_REGEX.test(normalized)) return true;
+
+  // Unknown or unclassified tracks MUST NOT default to chill!
+  return false;
 }

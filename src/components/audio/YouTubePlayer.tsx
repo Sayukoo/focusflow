@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Track } from "../../types";
+import type { RemoteTrackInfo, Track } from "../../types";
 
 interface YouTubePlayerProps {
   track: Track | null;
@@ -12,20 +12,26 @@ interface YouTubePlayerProps {
   onPlaying: (playing: boolean) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  onTrackChange?: (info: RemoteTrackInfo) => void;
 }
 
 interface YouTubePlayerInstance {
   destroy: () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
-  loadVideoById: (videoId: string) => void;
+  loadVideoById: (videoId: string | { videoId: string }) => void;
   pauseVideo: () => void;
   playVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   setVolume: (volume: number) => void;
   setPlaybackRate?: (suggestedRate: number) => void;
+  setPlaybackQuality?: (suggestedQuality: string) => void;
+  getPlaybackQuality?: () => string;
   nextVideo?: () => void;
   previousVideo?: () => void;
+  getPlaylistIndex?: () => number;
+  getPlaylist?: () => string[];
+  playVideoAt?: (index: number) => void;
   getVideoData?: () => { video_id?: string; title?: string; author?: string };
 }
 
@@ -78,11 +84,15 @@ export function YouTubePlayer({
   onPlaying,
   onEnded,
   onError,
+  onTrackChange,
 }: YouTubePlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayerInstance | null>(null);
   const lastSeekTokenRef = useRef<number | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
+  const onTrackEndedTimerRef = useRef<number | null>(null);
+  const currentPlayingVideoIdRef = useRef<string | null>(null);
+  const currentPlaylistIdRef = useRef<string | null>(null);
   const playbackRef = useRef({ playing, volume, playbackRate });
   const callbacksRef = useRef({
     onDuration,
@@ -90,6 +100,7 @@ export function YouTubePlayer({
     onError,
     onPlaying,
     onTime,
+    onTrackChange,
   });
   playbackRef.current = { playing, volume, playbackRate };
   callbacksRef.current = {
@@ -98,12 +109,13 @@ export function YouTubePlayer({
     onError,
     onPlaying,
     onTime,
+    onTrackChange,
   };
 
   const rawVideoId = track?.videoId;
   const isVideoIdValid = Boolean(rawVideoId && /^[\w-]{11}$/.test(rawVideoId));
   const videoId = isVideoIdValid ? rawVideoId : undefined;
-  const playlistId =
+  const rawPlaylistId =
     track?.playlistId ??
     (track?.providerKind === "playlist" && track.providerId
       ? track.providerId
@@ -111,18 +123,73 @@ export function YouTubePlayer({
         ? rawVideoId
         : undefined);
 
-  useEffect(() => {
-    if ((!videoId && !playlistId) || !hostRef.current) {
-      if (resumeTimerRef.current !== null) {
-        window.clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
+  // YouTube Music / YouTube dynamic algorithmic mixes (RD, UL, LM) fail when
+  // passed as playerVars.list in embedded iframes. If a videoId is present,
+  // we play the video directly instead of trying to load the mix as a playlist.
+  const isAlgorithmicMix = Boolean(
+    rawPlaylistId && /^(RD|UL|LM)/i.test(rawPlaylistId) && videoId,
+  );
+  const playlistId = isAlgorithmicMix ? undefined : rawPlaylistId;
+  const hasSource = Boolean(videoId || playlistId);
+
+  const clearResumeTimer = () => {
+    if (resumeTimerRef.current !== null) {
+      window.clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+  };
+
+  const clearTrackEndedTimer = () => {
+    if (onTrackEndedTimerRef.current !== null) {
+      window.clearTimeout(onTrackEndedTimerRef.current);
+      onTrackEndedTimerRef.current = null;
+    }
+  };
+
+  const checkActiveVideo = (player: YouTubePlayerInstance) => {
+    if (typeof player.getVideoData !== "function") return;
+    try {
+      const data = player.getVideoData();
+      const activeVid = data?.video_id;
+      if (
+        activeVid &&
+        activeVid.length === 11 &&
+        activeVid !== currentPlayingVideoIdRef.current
+      ) {
+        currentPlayingVideoIdRef.current = activeVid;
+        const playlistIndex =
+          typeof player.getPlaylistIndex === "function"
+            ? player.getPlaylistIndex()
+            : undefined;
+        callbacksRef.current.onTrackChange?.({
+          videoId: activeVid,
+          title: data.title,
+          author: data.author,
+          index:
+            typeof playlistIndex === "number" && playlistIndex >= 0
+              ? playlistIndex
+              : undefined,
+        });
       }
+    } catch {
+      // Third-party iframe may not have initialized video data yet.
+    }
+  };
+
+  // Player lifecycle: manages the YouTube iframe instance.
+  // Re-creates the player only when playlistId changes or when mounting/unmounting.
+  useEffect(() => {
+    if (!hasSource || !hostRef.current) {
+      clearResumeTimer();
+      clearTrackEndedTimer();
       try {
         playerRef.current?.destroy();
       } catch {
         // A third-party player can already have torn down its iframe.
       }
       playerRef.current = null;
+      currentPlaylistIdRef.current = null;
+      currentPlayingVideoIdRef.current = null;
       return;
     }
 
@@ -131,13 +198,6 @@ export function YouTubePlayer({
     const playerMount = document.createElement("div");
     playerMount.className = "youtube-player-target";
     let resumeAttempts = 0;
-
-    const clearResumeTimer = () => {
-      if (resumeTimerRef.current !== null) {
-        window.clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
-      }
-    };
 
     const resumeIfIntended = (player: YouTubePlayerInstance) => {
       clearResumeTimer();
@@ -169,6 +229,9 @@ export function YouTubePlayer({
     host.replaceChildren(playerMount);
     lastSeekTokenRef.current = null;
     clearResumeTimer();
+    clearTrackEndedTimer();
+    currentPlaylistIdRef.current = playlistId ?? null;
+    currentPlayingVideoIdRef.current = videoId ?? null;
 
     void loadYouTubeApi()
       .then((api) => {
@@ -182,6 +245,7 @@ export function YouTubePlayer({
           modestbranding: 1,
           playsinline: 1,
           origin: window.location.origin,
+          vq: "hd1080",
         };
 
         if (playlistId) {
@@ -189,9 +253,10 @@ export function YouTubePlayer({
           playerVars.list = playlistId;
         }
 
+        // Standard 640x360 rendered offscreen via CSS ensures studio-grade 160kbps Opus audio.
         playerRef.current = new api.Player(playerMount, {
-          height: "1",
-          width: "1",
+          height: "360",
+          width: "640",
           ...(videoId ? { videoId } : {}),
           playerVars,
           events: {
@@ -200,20 +265,33 @@ export function YouTubePlayer({
               if (typeof event.target.setVolume === "function") {
                 event.target.setVolume(playbackRef.current.volume * 100);
               }
-              if (typeof event.target.setPlaybackRate === "function" && playbackRef.current.playbackRate) {
+              if (
+                typeof event.target.setPlaybackRate === "function" &&
+                playbackRef.current.playbackRate
+              ) {
                 event.target.setPlaybackRate(playbackRef.current.playbackRate);
+              }
+              if (typeof event.target.setPlaybackQuality === "function") {
+                event.target.setPlaybackQuality("hd1080");
               }
               const duration =
                 typeof event.target.getDuration === "function"
                   ? event.target.getDuration()
                   : 0;
               callbacksRef.current.onDuration(duration || 0);
+              checkActiveVideo(event.target);
               if (playbackRef.current.playing) resumeIfIntended(event.target);
             },
             onStateChange: (event) => {
+              clearTrackEndedTimer();
+              checkActiveVideo(event.target);
+
               if (event.data === YOUTUBE_STATE_PLAYING) {
                 resumeAttempts = 0;
                 clearResumeTimer();
+                if (typeof event.target.setPlaybackQuality === "function") {
+                  event.target.setPlaybackQuality("hd1080");
+                }
                 callbacksRef.current.onPlaying(true);
               }
               if (
@@ -230,8 +308,36 @@ export function YouTubePlayer({
               }
               if (event.data === YOUTUBE_STATE_ENDED) {
                 clearResumeTimer();
-                callbacksRef.current.onPlaying(false);
-                callbacksRef.current.onEnded();
+                if (playlistId) {
+                  const playlist =
+                    typeof event.target.getPlaylist === "function"
+                      ? event.target.getPlaylist()
+                      : null;
+                  const playlistIndex =
+                    typeof event.target.getPlaylistIndex === "function"
+                      ? event.target.getPlaylistIndex()
+                      : -1;
+                  const isExplicitlyLast =
+                    Array.isArray(playlist) &&
+                    playlist.length > 0 &&
+                    playlistIndex >= playlist.length - 1;
+
+                  if (isExplicitlyLast) {
+                    callbacksRef.current.onPlaying(false);
+                    callbacksRef.current.onEnded();
+                  } else {
+                    // Intermediate track in a playlist: YouTube will advance to the next track.
+                    // Fallback timer in case the playlist stopped.
+                    onTrackEndedTimerRef.current = window.setTimeout(() => {
+                      onTrackEndedTimerRef.current = null;
+                      callbacksRef.current.onPlaying(false);
+                      callbacksRef.current.onEnded();
+                    }, 800);
+                  }
+                } else {
+                  callbacksRef.current.onPlaying(false);
+                  callbacksRef.current.onEnded();
+                }
               }
             },
             onError: (event) => {
@@ -258,15 +364,36 @@ export function YouTubePlayer({
     return () => {
       disposed = true;
       clearResumeTimer();
+      clearTrackEndedTimer();
       try {
         playerRef.current?.destroy();
       } catch {
         // A third-party player can already have torn down its iframe.
       }
       playerRef.current = null;
+      currentPlaylistIdRef.current = null;
+      currentPlayingVideoIdRef.current = null;
       host.replaceChildren();
     };
-  }, [videoId, playlistId]);
+  }, [playlistId, hasSource]);
+
+  // Seamless video switching: if the player already exists and a different video
+  // was selected (e.g. from the playlist list), switch video without destroying the iframe.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || !videoId) return;
+
+    // Already playing this exact video (e.g. YouTube auto-advanced and notified us)
+    if (currentPlayingVideoIdRef.current === videoId) return;
+
+    currentPlayingVideoIdRef.current = videoId;
+    if (typeof player.loadVideoById === "function") {
+      player.loadVideoById(videoId);
+      if (playbackRef.current.playing) {
+        player.playVideo();
+      }
+    }
+  }, [videoId]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -305,7 +432,7 @@ export function YouTubePlayer({
   }, [seekRequest]);
 
   useEffect(() => {
-    if (!videoId && !playlistId) return;
+    if (!hasSource) return;
 
     const timer = window.setInterval(() => {
       const player = playerRef.current;
@@ -318,10 +445,11 @@ export function YouTubePlayer({
       }
       callbacksRef.current.onTime(player.getCurrentTime() || 0);
       callbacksRef.current.onDuration(player.getDuration() || 0);
+      checkActiveVideo(player);
     }, 350);
 
     return () => window.clearInterval(timer);
-  }, [videoId, playlistId]);
+  }, [hasSource]);
 
   return <div ref={hostRef} className="youtube-player-host" aria-hidden="true" />;
 }

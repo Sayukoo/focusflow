@@ -24,9 +24,11 @@ export { HubPanel } from "./hub/HubPanel";
 // Settings & Profiles
 export { TimerSettings } from "./settings/TimerSettings";
 export { ProfilePicker } from "./settings/ProfilePicker";
+export { GeminiApiKeySection } from "./settings/GeminiApiKeySection";
 
 // Player
 export { FocusPlayer } from "./player/FocusPlayer";
 export { FocusStatsBadge } from "./player/FocusStatsBadge";
 export { PlaybackControls } from "./player/PlaybackControls";
 export { HeaderControls } from "./player/HeaderControls";
+export { PlaylistTracksModal } from "./player/PlaylistTracksModal";

@@ -14,6 +14,7 @@ export interface ProfileStore {
   activeProfileId: string;
   trackIdsByProfile: Record<string, string[]>;
   favoriteIdsByProfile: Record<string, string[]>;
+  userProfileOverrides?: Record<string, string>;
   migrationComplete: boolean;
 }
 
@@ -48,6 +49,7 @@ export function createDefaultProfileStore(): ProfileStore {
       "deep-work": [],
       energizing: [],
     },
+    userProfileOverrides: {},
     migrationComplete: false,
   };
 }
@@ -78,15 +80,28 @@ export function reconcileProfileTracks(
   const next = cloneProfileStore(store);
   const knownIds = unique(trackIds);
 
-  const resolveDefaultProfileId = (trackId: string): string | null => {
+  const resolveTargetProfileId = (trackId: string): string | null => {
+    // User manual override has absolute precedence!
+    const override = next.userProfileOverrides?.[trackId];
+    if (override && next.profiles.some((p) => p.id === override)) {
+      return override;
+    }
     const candidate = defaultProfileByTrackId[trackId];
     return candidate && next.profiles.some((profile) => profile.id === candidate)
       ? candidate
       : null;
   };
 
+  // Combine default assignments with user overrides (overrides win!)
+  const effectiveTargets: Record<string, string> = { ...defaultProfileByTrackId };
+  if (next.userProfileOverrides) {
+    for (const [trackId, profileId] of Object.entries(next.userProfileOverrides)) {
+      effectiveTargets[trackId] = profileId;
+    }
+  }
+
   // Enforce explicit profile assignments and purge cross-contamination
-  for (const [trackId, targetProfileId] of Object.entries(defaultProfileByTrackId)) {
+  for (const [trackId, targetProfileId] of Object.entries(effectiveTargets)) {
     if (!next.profiles.some((p) => p.id === targetProfileId)) continue;
     if (!knownIds.includes(trackId)) continue;
 
@@ -111,7 +126,7 @@ export function reconcileProfileTracks(
     );
     for (const trackId of knownIds) {
       if (alreadyAssigned.has(trackId)) continue;
-      const targetProfileId = resolveDefaultProfileId(trackId) ?? "deep-work";
+      const targetProfileId = resolveTargetProfileId(trackId) ?? "deep-work";
       next.trackIdsByProfile[targetProfileId] = unique([
         ...(next.trackIdsByProfile[targetProfileId] ?? []),
         trackId,
@@ -130,7 +145,7 @@ export function reconcileProfileTracks(
   );
   const unassigned = knownIds.filter((id) => !assigned.has(id));
   for (const trackId of unassigned) {
-    const targetProfileId = resolveDefaultProfileId(trackId) ?? next.activeProfileId;
+    const targetProfileId = resolveTargetProfileId(trackId) ?? next.activeProfileId;
     next.trackIdsByProfile[targetProfileId] = unique([
       ...(next.trackIdsByProfile[targetProfileId] ?? []),
       trackId,
@@ -139,6 +154,65 @@ export function reconcileProfileTracks(
 
   return next;
 }
+
+export function moveTrackToProfile(
+  store: ProfileStore,
+  trackId: string,
+  targetProfileId: string,
+): ProfileStore {
+  if (!store.profiles.some((p) => p.id === targetProfileId)) return store;
+  const next = cloneProfileStore(store);
+
+  // Remove from all other profiles
+  for (const profileId of Object.keys(next.trackIdsByProfile)) {
+    if (profileId !== targetProfileId) {
+      next.trackIdsByProfile[profileId] = (
+        next.trackIdsByProfile[profileId] ?? []
+      ).filter((id) => id !== trackId);
+    }
+  }
+
+  // Add to target profile if not already there
+  if (!(next.trackIdsByProfile[targetProfileId] ?? []).includes(trackId)) {
+    next.trackIdsByProfile[targetProfileId] = [
+      ...(next.trackIdsByProfile[targetProfileId] ?? []),
+      trackId,
+    ];
+  }
+
+  // Record user override so future reconcileProfileTracks does not overwrite it
+  next.userProfileOverrides = {
+    ...(next.userProfileOverrides ?? {}),
+    [trackId]: targetProfileId,
+  };
+
+  return next;
+}
+
+export function reorderProfileTracks(
+  store: ProfileStore,
+  profileId: string,
+  sourceIndex: number,
+  destinationIndex: number,
+): ProfileStore {
+  const current = [...(store.trackIdsByProfile[profileId] ?? [])];
+  if (
+    sourceIndex < 0 ||
+    sourceIndex >= current.length ||
+    destinationIndex < 0 ||
+    destinationIndex >= current.length ||
+    sourceIndex === destinationIndex
+  ) {
+    return store;
+  }
+
+  const next = cloneProfileStore(store);
+  const [item] = current.splice(sourceIndex, 1);
+  current.splice(destinationIndex, 0, item);
+  next.trackIdsByProfile[profileId] = current;
+  return next;
+}
+
 
 export function assignTracksToProfile(
   store: ProfileStore,
@@ -298,12 +372,26 @@ function normalizeProfileStore(value: unknown): ProfileStore {
       ? candidate.activeProfileId
       : fallback.activeProfileId;
 
+  const userProfileOverrides =
+    candidate.userProfileOverrides &&
+    typeof candidate.userProfileOverrides === "object"
+      ? Object.fromEntries(
+          Object.entries(candidate.userProfileOverrides).filter(
+            ([trackId, profileId]) =>
+              typeof trackId === "string" &&
+              typeof profileId === "string" &&
+              profiles.some((p) => p.id === profileId),
+          ),
+        )
+      : {};
+
   return {
     version: 1,
     profiles,
     activeProfileId,
     trackIdsByProfile,
     favoriteIdsByProfile,
+    userProfileOverrides,
     migrationComplete: candidate.migrationComplete === true,
   };
 }
@@ -367,6 +455,7 @@ function cloneProfileStore(store: ProfileStore): ProfileStore {
         [...ids],
       ]),
     ),
+    userProfileOverrides: { ...(store.userProfileOverrides ?? {}) },
     migrationComplete: store.migrationComplete,
   };
 }

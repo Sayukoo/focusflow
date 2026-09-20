@@ -7,10 +7,13 @@ export type IconName =
   | "check"
   | "clock"
   | "close"
+  | "eye"
+  | "eye-off"
   | "flame"
   | "folder"
   | "folder-open"
   | "gauge"
+  | "grip"
   | "heart"
   | "infinity"
   | "intervals"
@@ -64,6 +67,20 @@ const icons: Record<IconName, ReactElement> = {
     </>
   ),
   close: <path d="M18 6 6 18M6 6l12 12" />,
+  eye: (
+    <>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  "eye-off": (
+    <>
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </>
+  ),
   folder: (
     <>
       <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
@@ -80,6 +97,16 @@ const icons: Record<IconName, ReactElement> = {
       <path d="M12 14l3.5-3.5" />
       <path d="M4 14a8 8 0 1 1 16 0" />
       <circle cx="12" cy="14" r="1.2" fill="currentColor" />
+    </>
+  ),
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.3" fill="currentColor" />
+      <circle cx="9" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="9" cy="18" r="1.3" fill="currentColor" />
+      <circle cx="15" cy="6" r="1.3" fill="currentColor" />
+      <circle cx="15" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="15" cy="18" r="1.3" fill="currentColor" />
     </>
   ),
   target: (

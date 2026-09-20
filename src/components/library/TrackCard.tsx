@@ -17,6 +17,18 @@ interface TrackCardProps {
   onSelectGenre: (category: TrackCategory) => void;
   onToggleFavorite: (trackId: string) => void;
   onRemove: (track: Track) => void;
+  onViewPlaylist?: (playlistId: string) => void;
+  // Drag & drop & profile move:
+  index?: number;
+  draggable?: boolean;
+  isDragging?: boolean;
+  dropPosition?: "before" | "after" | null;
+  onDragStart?: (event: React.DragEvent<HTMLElement>, trackId: string, index: number) => void;
+  onDragEnd?: (event: React.DragEvent<HTMLElement>) => void;
+  onDragOver?: (event: React.DragEvent<HTMLElement>, index: number) => void;
+  onDragLeave?: (event: React.DragEvent<HTMLElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLElement>, index: number) => void;
+  onMoveToProfile?: (trackId: string, targetProfileId: string) => void;
 }
 
 export const TrackCard = memo(function TrackCard({
@@ -32,17 +44,69 @@ export const TrackCard = memo(function TrackCard({
   onSelectGenre,
   onToggleFavorite,
   onRemove,
+  onViewPlaylist,
+  index,
+  draggable = false,
+  isDragging = false,
+  dropPosition = null,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onMoveToProfile,
 }: TrackCardProps) {
+  const isCurrentlyEnergizing =
+    activeProfileName.toLowerCase().includes("energiz") ||
+    activeProfileName.toLowerCase().includes("energetyczn");
+  const oppositeProfileId = isCurrentlyEnergizing ? "deep-work" : "energizing";
+  const oppositeLabel = isCurrentlyEnergizing ? "Chillowe" : "Energetyczne";
+  const oppositeIcon = isCurrentlyEnergizing ? "target" : "flame";
+
   return (
     <article
       className={[
         "track-card",
         active ? "is-active" : "",
         expanded ? "is-expanded" : "",
+        draggable ? "is-draggable" : "",
+        isDragging ? "is-dragging" : "",
+        dropPosition === "before" ? "is-drop-target-before" : "",
+        dropPosition === "after" ? "is-drop-target-after" : "",
       ]
         .filter(Boolean)
         .join(" ")}
+      draggable={draggable}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/x-focusflow-track-id", track.id);
+        event.dataTransfer.setData("text/plain", track.id);
+        event.dataTransfer.effectAllowed = "move";
+        if (typeof index === "number") {
+          onDragStart?.(event, track.id, index);
+        }
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => {
+        if (typeof index === "number") {
+          onDragOver?.(event, index);
+        }
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(event) => {
+        if (typeof index === "number") {
+          onDrop?.(event, index);
+        }
+      }}
     >
+      {draggable ? (
+        <span
+          className="track-card-drag-handle"
+          title="Przeciągnij, aby zmienić kolejność lub przenieść"
+          aria-hidden="true"
+        >
+          <Icon name="grip" size={13} />
+        </span>
+      ) : null}
       <KaTeXTooltip placement="top" formula="\text{Play}">
         <button
           type="button"
@@ -106,8 +170,67 @@ export const TrackCard = memo(function TrackCard({
               <span>ŹRÓDŁO</span>
               <strong>{getSourceLabel(track)}</strong>
             </div>
+            {(track.playlistId ||
+              track.providerKind === "playlist" ||
+              track.providerKind === "album") && (
+              <div>
+                <span>PLAYLISTA</span>
+                {onViewPlaylist ? (
+                  <button
+                    type="button"
+                    className="track-playlist-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onViewPlaylist(
+                        track.playlistId || track.providerId || track.id,
+                      );
+                    }}
+                  >
+                    <Icon name="music-queue" size={12} />
+                    <span>{track.playlistTitle || "Pokaż utwory"}</span>
+                  </button>
+                ) : (
+                  <strong>{track.playlistTitle || "Playlista"}</strong>
+                )}
+              </div>
+            )}
+            {onMoveToProfile ? (
+              <div>
+                <span>KATEGORIA</span>
+                <button
+                  type="button"
+                  className="track-playlist-button track-move-detail-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onMoveToProfile(track.id, oppositeProfileId);
+                  }}
+                >
+                  <Icon name={oppositeIcon} size={12} />
+                  <span>Przenieś do {oppositeLabel}</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
+      ) : null}
+      {onMoveToProfile ? (
+        <KaTeXTooltip
+          placement="left"
+          formula={`\\text{Przenieś do:}~\\text{${oppositeLabel}}`}
+        >
+          <button
+            type="button"
+            className="track-card-move-btn"
+            aria-label={`Przenieś ${track.title} do ${oppositeLabel}`}
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation();
+              onMoveToProfile(track.id, oppositeProfileId);
+            }}
+          >
+            <Icon name={oppositeIcon} size={14} />
+          </button>
+        </KaTeXTooltip>
       ) : null}
       <KaTeXTooltip
         placement="left"
