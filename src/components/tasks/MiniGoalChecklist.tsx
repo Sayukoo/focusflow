@@ -42,6 +42,24 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
   const [decomposingId, setDecomposingId] = useState<string | null>(null);
   const [newSubSubText, setNewSubSubText] = useState<Record<string, string>>({});
   const previousItemsRef = useRef(items);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  function newGoalId(prefix: string): string {
+    try {
+      if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        return `${prefix}-${crypto.randomUUID()}`;
+      }
+    } catch {
+      // fall through to Math.random fallback
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
 
   useEffect(() => {
     const previousItems = previousItemsRef.current;
@@ -237,7 +255,7 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
     }
 
     const newSubItem: MiniGoal = {
-      id: `sub-goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: newGoalId("sub-goal"),
       text,
       completed: false,
     };
@@ -263,6 +281,7 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
           userAboutMe,
         },
       );
+      if (!mountedRef.current) return;
 
       if (result.subGoals.length > 0) {
         const newSubGoals = createMiniGoals(result.subGoals);
@@ -271,7 +290,7 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
     } catch {
       // Gemini breakdown error handled gracefully
     } finally {
-      setDecomposingId(null);
+      if (mountedRef.current) setDecomposingId(null);
     }
   };
 
@@ -284,7 +303,7 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
       return;
     }
     const newGoal: MiniGoal = {
-      id: `mini-goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: newGoalId("mini-goal"),
       text,
       completed: false,
     };
@@ -436,7 +455,6 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
                         [item.id]: e.target.value,
                       }))
                     }
-                    onBlur={() => handleAddSubSubGoal(index)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -477,7 +495,6 @@ export const MiniGoalChecklist = memo(function MiniGoalChecklist({
                 placeholder="Add subtask…"
                 aria-label="Add new subtask"
                 onChange={(e) => setNewSubtaskText(e.target.value)}
-                onBlur={handleAddSubtask}
                 onKeyDown={handleNewSubtaskKeyDown}
               />
             </>

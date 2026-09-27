@@ -30,7 +30,6 @@ import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { TimerTypeTabs } from "./timer/TimerTypeTabs";
 import { TimerDurationControls } from "./timer/TimerDurationControls";
 import { TimerGoalSection } from "./timer/TimerGoalSection";
-import { AppLockSection } from "./timer/AppLockSection";
 import { GeminiApiKeySection } from "./GeminiApiKeySection";
 
 interface TimerSettingsProps {
@@ -534,48 +533,6 @@ export const TimerSettings = memo(function TimerSettings({
               className="timer-settings-body"
               layout={!shouldReduceMotion}
             >
-              {!compact ? (
-                <>
-                  <TimerTypeTabs
-                    kind={settings.kind}
-                    shouldReduceMotion={shouldReduceMotion}
-                    onChooseKind={chooseKind}
-                  />
-
-                  <motion.div
-                    className="timer-copy"
-                    layout={!shouldReduceMotion ? "position" : false}
-                  >
-                    <h2>
-                      {settings.kind === "infinite"
-                        ? "Infinite"
-                        : settings.kind === "intervals"
-                          ? "Intervals"
-                          : "Timer"}
-                    </h2>
-                    <p id="timer-settings-description">
-                      {settings.kind === "infinite"
-                        ? "No end time"
-                        : settings.kind === "intervals"
-                          ? "Work and break cycle"
-                          : "Session duration"}
-                    </p>
-                  </motion.div>
-
-                  <TimerDurationControls
-                    settings={settings}
-                    customAmount={customAmount}
-                    customUnit={customUnit}
-                    shouldReduceMotion={shouldReduceMotion}
-                    onCustomAmountChange={setCustomAmount}
-                    onCustomUnitChange={setCustomUnit}
-                    onChoosePreset={choosePreset}
-                    onChooseIntervalPreset={chooseIntervalPreset}
-                    onApplyCustom={applyCustom}
-                  />
-                </>
-              ) : null}
-
               <TimerGoalSection
                 settings={settings}
                 goalDraft={goalDraft}
@@ -604,14 +561,44 @@ export const TimerSettings = memo(function TimerSettings({
                 onMiniGoalsChange={handleDraftMiniGoalsChange}
               />
 
-              <GeminiApiKeySection />
+              {!compact ? (
+                <>
+                  <TimerTypeTabs
+                    kind={settings.kind}
+                    shouldReduceMotion={shouldReduceMotion}
+                    onChooseKind={chooseKind}
+                  />
 
-              <AppLockSection
-                settings={draftSettings}
-                onChange={(next) =>
-                  setDraftSettings(normalizeTimerSettings(next))
-                }
-              />
+                  <h2 className="sr-only">
+                    {settings.kind === "infinite"
+                      ? "Infinite"
+                      : settings.kind === "intervals"
+                        ? "Intervals"
+                        : "Timer"}
+                  </h2>
+                  <p id="timer-settings-description" className="sr-only">
+                    {settings.kind === "infinite"
+                      ? "No end time"
+                      : settings.kind === "intervals"
+                        ? "Work and break cycle"
+                        : "Session duration"}
+                  </p>
+
+                  <TimerDurationControls
+                    settings={settings}
+                    customAmount={customAmount}
+                    customUnit={customUnit}
+                    shouldReduceMotion={shouldReduceMotion}
+                    onCustomAmountChange={setCustomAmount}
+                    onCustomUnitChange={setCustomUnit}
+                    onChoosePreset={choosePreset}
+                    onChooseIntervalPreset={chooseIntervalPreset}
+                    onApplyCustom={applyCustom}
+                  />
+                </>
+              ) : null}
+
+              <GeminiApiKeySection />
 
               <div className="timer-settings-actions">
                 <button
@@ -620,7 +607,7 @@ export const TimerSettings = memo(function TimerSettings({
                   aria-label="Cancel timer settings"
                   onClick={handleClose}
                 >
-                  Cancel
+                  Anuluj
                 </button>
                 <button
                   type="button"
@@ -628,7 +615,7 @@ export const TimerSettings = memo(function TimerSettings({
                   aria-label="Apply timer settings"
                   onClick={handleApply}
                 >
-                  Apply
+                  Zastosuj
                 </button>
               </div>
             </motion.div>
@@ -640,6 +627,7 @@ export const TimerSettings = memo(function TimerSettings({
 }, (previous, next) => {
   if (previous.open !== next.open) return false;
   if (!previous.open) return true;
+  if (previous.initialFocus !== next.initialFocus) return false;
   return (
     previous.settings === next.settings &&
     previous.compact === next.compact &&

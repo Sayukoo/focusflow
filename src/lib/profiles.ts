@@ -110,13 +110,14 @@ export function reconcileProfileTracks(
       trackId,
     ]);
 
-    // Ensure it is removed from the opposite profile so phonk/chill never leak
-    const conflictingProfileId =
-      targetProfileId === "deep-work" ? "energizing" : "deep-work";
-    if (next.trackIdsByProfile[conflictingProfileId]) {
-      next.trackIdsByProfile[conflictingProfileId] = (
-        next.trackIdsByProfile[conflictingProfileId] ?? []
-      ).filter((id) => id !== trackId);
+    // Ensure it is removed from every other profile so tracks never leak
+    // across profiles (custom profiles included).
+    for (const otherId of Object.keys(next.trackIdsByProfile)) {
+      if (otherId === targetProfileId) continue;
+      const list = next.trackIdsByProfile[otherId];
+      if (list?.includes(trackId)) {
+        next.trackIdsByProfile[otherId] = list.filter((id) => id !== trackId);
+      }
     }
   }
 
@@ -289,7 +290,7 @@ export function addCustomProfile(
   const cleanName = name.trim().replace(/\s+/g, " ").slice(0, 40);
   if (!cleanName) return { store, profile: null };
 
-  const id = `profile-${slugify(cleanName)}-${Date.now().toString(36)}`;
+  const id = `profile-${slugify(cleanName)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   const profile: MusicProfile = {
     id,
     name: cleanName,
@@ -325,6 +326,7 @@ export function toggleProfileFavorite(
   profileId: string,
   trackId: string,
 ): ProfileStore {
+  if (!store.profiles.some((profile) => profile.id === profileId)) return store;
   const next = cloneProfileStore(store);
   const current = next.favoriteIdsByProfile[profileId] ?? [];
   next.favoriteIdsByProfile[profileId] = current.includes(trackId)

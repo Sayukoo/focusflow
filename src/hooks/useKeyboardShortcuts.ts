@@ -10,6 +10,7 @@ interface KeyboardShortcutsOptions {
   onToggleShortcuts?: () => void;
   onSpeedUp?: () => void;
   onSpeedDown?: () => void;
+  onToggleShuffle?: () => void;
   onEscape?: () => void;
   disabled?: boolean;
 }
@@ -24,6 +25,7 @@ export function useKeyboardShortcuts({
   onToggleShortcuts,
   onSpeedUp,
   onSpeedDown,
+  onToggleShuffle,
   onEscape,
   disabled = false,
 }: KeyboardShortcutsOptions): void {
@@ -40,6 +42,7 @@ export function useKeyboardShortcuts({
     onToggleShortcuts,
     onSpeedUp,
     onSpeedDown,
+    onToggleShuffle,
     onEscape,
   });
   handlersRef.current = {
@@ -52,6 +55,7 @@ export function useKeyboardShortcuts({
     onToggleShortcuts,
     onSpeedUp,
     onSpeedDown,
+    onToggleShuffle,
     onEscape,
   };
 
@@ -69,6 +73,7 @@ export function useKeyboardShortcuts({
         onToggleShortcuts,
         onSpeedUp,
         onSpeedDown,
+        onToggleShuffle,
         onEscape,
       } = handlersRef.current;
       const target = event.target as HTMLElement | null;
@@ -130,6 +135,11 @@ export function useKeyboardShortcuts({
         if (onPrevious && !event.shiftKey && !event.ctrlKey) {
           event.preventDefault();
           onPrevious();
+        }
+      } else if (event.key === "r" || event.key === "R") {
+        if (onToggleShuffle && !event.ctrlKey && !event.metaKey) {
+          event.preventDefault();
+          onToggleShuffle();
         }
       } else if (event.key === "]") {
         if (onSpeedUp) {

@@ -245,10 +245,25 @@ export function parseRemoteLink(value: string): ParsedRemoteLink | null {
     hostname === "soundcloud.com" ||
     hostname === "on.soundcloud.com"
   ) {
-    if (pathParts.length >= 2 || hostname === "on.soundcloud.com") {
+    const NON_TRACK_SEGMENTS = new Set([
+      "discover",
+      "stream",
+      "feed",
+      "upload",
+      "charts",
+      "search",
+      "you",
+      "settings",
+      "pages",
+    ]);
+    const first = pathParts[0]?.toLowerCase();
+    if (
+      (pathParts.length >= 2 && first && !NON_TRACK_SEGMENTS.has(first)) ||
+      hostname === "on.soundcloud.com"
+    ) {
       return {
         provider: "soundcloud",
-        providerId: hashRemoteUrl(url.toString()),
+        providerId: hashRemoteUrl(normalizeRemoteUrlForId(url.toString())),
         url: url.toString(),
       };
     }
@@ -259,7 +274,7 @@ export function parseRemoteLink(value: string): ParsedRemoteLink | null {
     if (postId || hostname === "vm.tiktok.com" || hostname === "vt.tiktok.com") {
       return {
         provider: "tiktok",
-        providerId: postId ?? hashRemoteUrl(url.toString()),
+        providerId: postId ?? hashRemoteUrl(normalizeRemoteUrlForId(url.toString())),
         providerKind: "video",
         url: url.toString(),
       };
@@ -299,6 +314,21 @@ function hashRemoteUrl(value: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36);
+}
+
+function normalizeRemoteUrlForId(value: string): string {
+  try {
+    const url = new URL(
+      value.startsWith("http://") || value.startsWith("https://")
+        ? value
+        : `https://${value}`,
+    );
+    url.search = "";
+    url.hash = "";
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, "") || "/"}`;
+  } catch {
+    return value.trim().toLowerCase();
+  }
 }
 
 export function youtubeThumbnail(videoId: string): string {
@@ -515,7 +545,15 @@ async function fetchHtml(targetUrl: string, timeoutMs = 12000): Promise<string> 
   if (isTauriRuntime()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const content = await invoke<string>("fetch_url_content", { url: targetUrl });
+      const content = await Promise.race([
+        invoke<string>("fetch_url_content", { url: targetUrl }),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("Tauri fetch timed out")),
+            timeoutMs,
+          ),
+        ),
+      ]);
       if (content && content.trim()) return content;
     } catch {
       // Fall back to standard fetch if Tauri command is unavailable
@@ -758,7 +796,13 @@ export async function fetchSpotifyPlaylistTracks(
     );
     if (!match) return [];
 
-    const json = JSON.parse(match[1]) as Record<string, unknown>;
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(match[1]) as Record<string, unknown>;
+    } catch {
+      console.warn("Spotify playlist payload is not valid JSON.");
+      return [];
+    }
     const props = (json?.props as Record<string, unknown>)?.pageProps as Record<string, unknown>;
     const state = props?.state as Record<string, unknown>;
     const data = state?.data as Record<string, unknown>;
@@ -792,9 +836,14 @@ export async function fetchSpotifyPlaylistTracks(
     const playlistId = _link.providerId;
 
     return trackList.map((t) => {
-      const spotifyId = t.uri
-        ? t.uri.split(":")[2]
-        : t.id || t.uid || hashRemoteUrl(t.title || t.name || "spotify");
+      const parts = typeof t.uri === "string" ? t.uri.split(":") : [];
+      const rawSpotifyId =
+        parts.length === 3 && parts[2] ? parts[2] : t.id || t.uid || "";
+      const spotifyId =
+        rawSpotifyId ||
+        hashRemoteUrl(
+          normalizeRemoteUrlForId(t.title || t.name || "spotify"),
+        );
       const trackUrl = spotifyId ? `https://open.spotify.com/track/${spotifyId}` : url;
       const title = t.title || t.name || "Spotify · track";
       const author =
@@ -895,22 +944,29 @@ export async function fetchRemotePlaylistTracks(
 }
 
 export function loadRemoteTracks(): Track[] {
-  try {
-    const rawValues = [
-      localStorage.getItem(REMOTE_LIBRARY_KEY),
-      localStorage.getItem(LEGACY_YOUTUBE_LIBRARY_KEY),
-    ].filter((value): value is string => Boolean(value));
-    let tracks: Track[] = [];
+  const rawValues = [
+    localStorage.getItem(REMOTE_LIBRARY_KEY),
+    localStorage.getItem(LEGACY_YOUTUBE_LIBRARY_KEY),
+  ];
+  let tracks: Track[] = [];
 
-    for (const raw of rawValues) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) continue;
-      for (const track of parsed) {
-        if (isStoredRemoteTrack(track) && !tracks.some((item) => item.id === track.id)) {
-          tracks.push(track);
-        }
+  for (const raw of rawValues) {
+    if (!raw) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    for (const track of parsed) {
+      if (isStoredRemoteTrack(track) && !tracks.some((item) => item.id === track.id)) {
+        tracks.push(track);
       }
     }
+  }
+
+  try {
 
     const hadLegacyLiveTracks = tracks.some((track) =>
       LEGACY_LIVE_TRACK_IDS.has(track.id),
@@ -957,19 +1013,37 @@ export function loadRemoteTracks(): Track[] {
 const REMOTE_LIBRARY_MAX_JSON_BYTES = 3_500_000;
 
 export function saveRemoteTracks(tracks: Track[]): void {
+  let json = JSON.stringify(tracks);
   let payload = tracks;
-  let json = JSON.stringify(payload);
   if (json.length > REMOTE_LIBRARY_MAX_JSON_BYTES) {
-    payload = [...tracks];
-    for (
-      let index = payload.length - 1;
-      index >= 0 && json.length > REMOTE_LIBRARY_MAX_JSON_BYTES;
-      index -= 1
-    ) {
-      if (payload[index].thumbnailDataUrl) {
-        payload[index] = { ...payload[index], thumbnailDataUrl: undefined };
-        json = JSON.stringify(payload);
+    const stripped = tracks.map((track) =>
+      track.thumbnailDataUrl
+        ? { ...track, thumbnailDataUrl: undefined }
+        : track,
+    );
+    json = JSON.stringify(stripped);
+    payload = stripped;
+    // If still over budget (many tracks, no thumbnails left), keep the
+    // most recent N tracks that fit instead of failing silently.
+    if (json.length > REMOTE_LIBRARY_MAX_JSON_BYTES && stripped.length > 0) {
+      let low = 1;
+      let high = stripped.length;
+      let best = stripped.slice(-50);
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const candidate = stripped.slice(-mid);
+        const candidateJson = JSON.stringify(candidate);
+        if (candidateJson.length <= REMOTE_LIBRARY_MAX_JSON_BYTES) {
+          best = candidate;
+          json = candidateJson;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
       }
+      payload = best;
+      json = JSON.stringify(payload);
+      console.warn("Remote library truncated to fit localStorage quota.");
     }
   }
   try {
@@ -1011,7 +1085,11 @@ export function loadFavoriteTrackIds(): string[] {
 }
 
 export function saveFavoriteTrackIds(ids: string[]): void {
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...new Set(ids)]));
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...new Set(ids)]));
+  } catch {
+    // Private mode / quota — in-memory favorites keep working.
+  }
 }
 
 const STORAGE_KEY = "focusflow.player";
@@ -1023,12 +1101,22 @@ export function loadPlayerSnapshot(): Partial<{
   durationPreset: DurationPreset | string;
   timerSettings: TimerSettings;
   playbackRate: number;
-  volumeNormalization: boolean;
+  shuffleEnabled: boolean;
 }> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, unknown>;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as Partial<{
+      currentTrackId: string | null;
+      volume: number;
+      mode: string;
+      durationPreset: DurationPreset | string;
+      timerSettings: TimerSettings;
+      playbackRate: number;
+      shuffleEnabled: boolean;
+    }>;
   } catch {
     return {};
   }
@@ -1041,7 +1129,11 @@ export function savePlayerSnapshot(snapshot: {
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
   playbackRate?: number;
-  volumeNormalization?: boolean;
+  shuffleEnabled?: boolean;
 }): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Private mode / quota — session continues in memory.
+  }
 }

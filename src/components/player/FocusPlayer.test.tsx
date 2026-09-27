@@ -191,7 +191,7 @@ describe("FocusPlayer AI category chip", () => {
 
     const timer = screen.getByText("0:00", { selector: ".timer-display" });
     const goal = screen.getByRole("button", {
-      name: `Main task: ${timerSettings.goal}. Click to edit`,
+      name: `Główne zadanie: ${timerSettings.goal}. Kliknij, aby edytować`,
     });
     const checkbox = screen.getByRole("checkbox", {
       name: "Mark subtask 1 complete",

@@ -136,6 +136,7 @@ export function SoundCloudPlayer({
         });
       })
       .catch((error: unknown) => {
+        if (disposed) return;
         callbacksRef.current.onError(
           error instanceof Error ? error.message : String(error),
         );
@@ -146,7 +147,7 @@ export function SoundCloudPlayer({
       widgetRef.current = null;
       host.replaceChildren();
     };
-  }, [track?.id]);
+  }, [track?.id, track?.url, track?.providerId]);
 
   useEffect(() => {
     const widget = widgetRef.current;

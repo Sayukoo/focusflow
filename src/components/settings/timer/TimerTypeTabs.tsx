@@ -21,21 +21,24 @@ export function TimerTypeTabs({
       <TimerTab
         active={kind === "intervals"}
         icon="intervals"
-        label="Intervals"
+        label="Interwały"
+        ariaLabel="Intervals"
         reducedMotion={shouldReduceMotion}
         onClick={() => onChooseKind("intervals")}
       />
       <TimerTab
         active={kind === "timer"}
         icon="stopwatch"
-        label="Timer"
+        label="Minutnik"
+        ariaLabel="Timer"
         reducedMotion={shouldReduceMotion}
         onClick={() => onChooseKind("timer")}
       />
       <TimerTab
         active={kind === "infinite"}
         icon="infinity"
-        label="Infinite"
+        label="Ciągły"
+        ariaLabel="Infinite"
         reducedMotion={shouldReduceMotion}
         onClick={() => onChooseKind("infinite")}
       />

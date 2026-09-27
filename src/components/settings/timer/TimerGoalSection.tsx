@@ -46,8 +46,9 @@ export function TimerGoalSection({
       layout={!shouldReduceMotion ? "position" : false}
     >
       <div className="timer-goal-label-row">
-        <label htmlFor="timer-work-goal">
-          {settings.kind === "infinite" ? "Finite goal" : "Work goal"}
+        <label id="timer-goal-label" htmlFor="timer-work-goal">
+          <Icon name="target" size={13} aria-hidden="true" />
+          Główne zadanie
         </label>
         {settings.kind !== "infinite" ? (
           <KaTeXTooltip
@@ -61,8 +62,8 @@ export function TimerGoalSection({
               type="button"
               className={
                 miniGoalsLoading
-                  ? "mini-goals-icon-button is-loading"
-                  : "mini-goals-icon-button"
+                  ? "mini-goals-icon-button mini-goals-generate-btn is-loading"
+                  : "mini-goals-icon-button mini-goals-generate-btn"
               }
               aria-label={
                 miniGoalsLoading
@@ -73,7 +74,8 @@ export function TimerGoalSection({
               disabled={miniGoalsLoading}
               onClick={() => void onRequestMiniGoals()}
             >
-              <Icon name="sparkles" size={15} />
+              <Icon name="sparkles" size={14} />
+              <span>{miniGoalsLoading ? "…" : "Generuj"}</span>
             </button>
           </KaTeXTooltip>
         ) : null}
@@ -85,11 +87,9 @@ export function TimerGoalSection({
           id="timer-work-goal"
           rows={3}
           maxLength={300}
-          placeholder="Required for finite mode"
+          placeholder="Wpisz lub stwórz główne zadanie…"
           value={goalDraft}
-          aria-label={
-            settings.kind === "infinite" ? "Finite goal" : "Work goal"
-          }
+          aria-label={settings.kind === "infinite" ? "Finite goal" : "Work goal"}
           aria-invalid={Boolean(goalError)}
           aria-describedby={goalError ? "timer-goal-error" : undefined}
           required={settings.kind !== "infinite"}

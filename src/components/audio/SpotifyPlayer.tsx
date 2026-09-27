@@ -98,12 +98,12 @@ export function SpotifyPlayer({
       return;
     }
 
-    // If already playing this embed or playlist, don't recreate the iframe
+    // If already playing this exact embed URL, don't recreate the iframe.
+    // Strict URL equality only — substring matching could reuse the wrong
+    // embed for a different track.
     if (
       controllerRef.current &&
-      (currentLoadedUrlRef.current === track.url ||
-        (lastPlayingUriRef.current &&
-          track.url.includes(lastPlayingUriRef.current.split(":").pop() ?? "")))
+      currentLoadedUrlRef.current === track.url
     ) {
       return;
     }
@@ -118,11 +118,15 @@ export function SpotifyPlayer({
       track.providerKind === "playlist" || track.providerKind === "album"
         ? 352
         : 80;
+    // Fallback iframe first (offline/slow API); the controller replaces it
+    // via replaceChildren, never appending a second player.
     appendSpotifyFallback(host, track, embedHeight);
 
     void loadSpotifyApi()
       .then((api) => {
         if (disposed || !hostRef.current) return;
+        // Replace fallback (or empty host) so we never run two players.
+        hostRef.current.replaceChildren();
 
         api.createController(
           hostRef.current,
@@ -182,7 +186,7 @@ export function SpotifyPlayer({
       currentLoadedUrlRef.current = null;
       host.replaceChildren();
     };
-  }, [track?.id]);
+  }, [track?.id, track?.url, track?.providerId]);
 
   useEffect(() => {
     const controller = controllerRef.current;
@@ -202,7 +206,7 @@ export function SpotifyPlayer({
     if (iframe?.contentWindow) {
       iframe.contentWindow.postMessage(
         { command: "set_volume", value: Math.round(volume * 100) },
-        "*",
+        "https://open.spotify.com",
       );
     }
   }, [volume]);
@@ -274,10 +278,21 @@ function loadSpotifyApi(): Promise<SpotifyIframeApi> {
     const script = document.createElement("script");
     script.src = "https://open.spotify.com/embed/iframe-api/v1";
     script.async = true;
-    script.onerror = () =>
+    script.onerror = () => {
+      spotifyApiPromise = null;
       reject(new Error("Could not load the Spotify player."));
+    };
     document.head.appendChild(script);
   });
+
+  // Reset cached rejection so a transient network failure doesn't block
+  // the player forever.
+  spotifyApiPromise.then(
+    () => undefined,
+    () => {
+      spotifyApiPromise = null;
+    },
+  );
 
   return spotifyApiPromise;
 }

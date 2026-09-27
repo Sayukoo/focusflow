@@ -1,4 +1,4 @@
-import { memo, type ReactElement, type ReactNode } from "react";
+import { memo, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 
@@ -18,6 +18,7 @@ interface HeaderControlsProps {
 // PERF: memo — parent re-renders every timer tick; header is static between ticks.
 export const HeaderControls = memo(function HeaderControls({
   windowPinned,
+  windowPinAvailable = true,
   volume = 1,
   onVolume,
   onSetWindowPinned,
@@ -43,10 +44,9 @@ export const HeaderControls = memo(function HeaderControls({
                 max={1}
                 step={0.01}
                 value={volume}
-                style={{ "--vol": `${volumePct}%` } as React.CSSProperties}
+                style={{ "--vol": `${volumePct}%` } as CSSProperties}
                 aria-label="Volume slider"
                 onChange={(e) => onVolume?.(Number(e.target.value))}
-                onInput={(e) => onVolume?.(Number(e.currentTarget.value))}
               />
             </div>
           </KaTeXTooltip>
@@ -73,6 +73,8 @@ export const HeaderControls = memo(function HeaderControls({
           }
           aria-pressed={windowPinned}
           onClick={() => void onSetWindowPinned(!windowPinned)}
+          disabled={!windowPinAvailable}
+          title={windowPinAvailable ? undefined : "Pin available in desktop app"}
         >
           <Icon name="pin" size={18} />
         </button>

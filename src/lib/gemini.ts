@@ -111,7 +111,7 @@ export function loadTrackCategoryCache(): Record<string, TrackCategory> {
     const raw = localStorage.getItem(CATEGORY_CACHE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
     return Object.fromEntries(
       Object.entries(parsed).filter(
@@ -213,6 +213,12 @@ export async function categorizeTrackWithStatus(
       return { category: null, status: "cancelled" };
     }
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { category: null, status: "invalid-api-key" };
+      }
+      if (response.status === 429) {
+        return { category: null, status: "rate-limited" };
+      }
       return { category: null, status: "request-failed" };
     }
     const payload = (await response.json()) as GeminiGenerateResponse;
@@ -235,6 +241,9 @@ export async function categorizeTrackWithStatus(
       return { category: null, status: "request-failed" };
     }
 
+    if (externalSignal?.aborted) {
+      return { category: null, status: "cancelled" };
+    }
     saveTrackCategory(track.id, category);
     return { category, status: "available" };
   } catch {
@@ -397,7 +406,11 @@ export async function generateMiniGoalsDetailed(
   ].join("\n");
   const controller = new AbortController();
   const abortExternal = () => controller.abort();
-  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 10_000);
   signal?.addEventListener("abort", abortExternal, { once: true });
 
   try {
@@ -468,6 +481,9 @@ export async function generateMiniGoalsDetailed(
         miniGoals.length > 0 ? undefined : clarifyingQuestion,
     };
   } catch (error) {
+    if (timedOut) {
+      throw new GeminiRequestError("Gemini request timed out.");
+    }
     if (controller.signal.aborted) throw error;
     if (error instanceof GeminiRequestError) throw error;
     throw new GeminiRequestError("Gemini mini-goals are unavailable.");
@@ -488,8 +504,11 @@ export async function breakdownSubGoalDetailed(
   context: MiniGoalContext,
   signal?: AbortSignal,
 ): Promise<BreakdownSubGoalResult> {
-  const cleanTarget = targetSubGoal.text.replace(/\s+/g, " ").trim();
-  const cleanMainGoal = mainGoal.replace(/\s+/g, " ").trim().slice(0, 300);
+  const cleanTarget = (targetSubGoal?.text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+  const cleanMainGoal = (mainGoal ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
   if (!cleanTarget || !hasGeminiConfiguration()) return { subGoals: [] };
   if (signal?.aborted) {
     throw new DOMException("Sub-goal breakdown request was cancelled.", "AbortError");
@@ -505,8 +524,8 @@ export async function breakdownSubGoalDetailed(
     ? context.userAboutMe.replace(/\s+/g, " ").trim().slice(0, 4000)
     : "";
 
-  const allSubGoalsSummary = allSubGoals.map(
-    (item) => `  - [${item.completed ? "x" : " "}] ${item.text}`,
+  const allSubGoalsSummary = (Array.isArray(allSubGoals) ? allSubGoals : []).map(
+    (item) => `  - [${item?.completed ? "x" : " "}] ${item?.text ?? ""}`,
   );
 
   const prompt = [
@@ -529,7 +548,11 @@ export async function breakdownSubGoalDetailed(
 
   const controller = new AbortController();
   const abortExternal = () => controller.abort();
-  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 10_000);
   signal?.addEventListener("abort", abortExternal, { once: true });
 
   try {
@@ -579,6 +602,9 @@ export async function breakdownSubGoalDetailed(
     const subGoals = normalizeMiniGoals(parsed.subGoals);
     return { subGoals };
   } catch (error) {
+    if (timedOut) {
+      throw new GeminiRequestError("Gemini sub-goal breakdown timed out.");
+    }
     if (controller.signal.aborted) throw error;
     if (error instanceof GeminiRequestError) throw error;
     throw new GeminiRequestError("Gemini sub-goal breakdown is unavailable.");

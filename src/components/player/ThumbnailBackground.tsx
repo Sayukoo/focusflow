@@ -368,7 +368,8 @@ export const ThumbnailBackground = memo(function ThumbnailBackground({
 
 /** Renders 3 separate blurred copies of the thumbnail for chromatic depth. */
 function ThumbnailLayers({ url }: { url: string }) {
-  const style = { backgroundImage: `url("${url}")` };
+  const safeUrl = url.replace(/"/g, "%22");
+  const style = { backgroundImage: `url("${safeUrl}")` };
   return (
     <>
       {/* Far background: heaviest blur, slight purple tint */}

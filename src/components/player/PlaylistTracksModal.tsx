@@ -63,6 +63,11 @@ export function PlaylistTracksModal({
 
   const title = playlistTitle || "Playlista";
 
+  const activeItem = useMemo(
+    () => tracks.find((t) => t.id === currentTrackId) ?? null,
+    [tracks, currentTrackId],
+  );
+
   return (
     <AnimatePresence>
       {open ? (
@@ -135,7 +140,6 @@ export function PlaylistTracksModal({
                 </div>
               ) : (
                 tracks.map((item, index) => {
-                  const activeItem = tracks.find((t) => t.id === currentTrackId);
                   const isCurrent =
                     item.id === currentTrackId ||
                     Boolean(
@@ -177,7 +181,7 @@ export function PlaylistTracksModal({
                           style={
                             thumbnail
                               ? {
-                                  backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${thumbnail}")`,
+                                  backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${thumbnail.replace(/"/g, "%22")}")`,
                                 }
                               : undefined
                           }

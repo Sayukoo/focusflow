@@ -10,7 +10,7 @@ import "./styles.css";
 
 function App() {
   const player = useAudioLibrary();
-  const [windowPinned, setWindowPinnedState] = useState(false);
+  const [windowPinned, setWindowPinnedState] = useState(true);
 
   useEffect(() => {
     void ensureWindowsAutostart().catch(() => {
@@ -140,6 +140,10 @@ function App() {
     () => void player.playPrevious(),
     [player.playPrevious],
   );
+  const handleToggleShuffle = useCallback(
+    () => player.toggleShuffle(),
+    [player.toggleShuffle],
+  );
   const handleSeek = useCallback(
     (seconds: number) => player.seek(seconds),
     [player.seek],
@@ -178,10 +182,6 @@ function App() {
     () => player.setError(null),
     [player.setError],
   );
-  const handleToggleVolumeNormalization = useCallback(
-    () => player.toggleVolumeNormalization(),
-    [player.toggleVolumeNormalization],
-  );
   const handleReorderTracks = useCallback(
     (sourceIndex: number, destinationIndex: number) =>
       player.reorderTracks(sourceIndex, destinationIndex),
@@ -195,7 +195,7 @@ function App() {
 
   if (!player.ready) {
     return (
-      <div className="boot">
+      <div className="boot" role="status" aria-label="Loading FocusFlow">
         <div className="boot-orb" aria-hidden="true" />
       </div>
     );
@@ -252,12 +252,12 @@ function App() {
       onTogglePlay={handleTogglePlay}
       onNext={handleNext}
       onPrevious={handlePrevious}
+      shuffleEnabled={player.shuffleEnabled}
+      onToggleShuffle={handleToggleShuffle}
       onSeek={handleSeek}
       onVolume={handleVolume}
       playbackRate={player.playbackRate}
       onPlaybackRateChange={handlePlaybackRateChange}
-      volumeNormalization={player.volumeNormalization}
-      onToggleVolumeNormalization={handleToggleVolumeNormalization}
       onToggleFavorite={handleToggleFavorite}
       onPlayQueue={handlePlayQueue}
       onOpenTimerSettings={handleOpenTimerSettings}

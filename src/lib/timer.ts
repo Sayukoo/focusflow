@@ -259,8 +259,10 @@ function normalizeMinutes(value: unknown, fallback: number): number {
   return Math.min(MAX_TIMER_MINUTES, Math.max(1, Math.round(amount)));
 }
 
-function normalizeMiniGoals(value: unknown): MiniGoal[] {
+function normalizeMiniGoals(value: unknown, depth = 0): MiniGoal[] {
   if (!Array.isArray(value)) return [];
+  // Cap nesting to avoid stack overflow on crafted storage payloads.
+  if (depth > 2) return [];
 
   const usedIds = new Set<string>();
   const miniGoals: MiniGoal[] = [];
@@ -288,7 +290,7 @@ function normalizeMiniGoals(value: unknown): MiniGoal[] {
     const rawSubGoals = Array.isArray(candidate?.subGoals)
       ? candidate.subGoals
       : undefined;
-    const subGoals = rawSubGoals ? normalizeMiniGoals(rawSubGoals) : undefined;
+    const subGoals = rawSubGoals ? normalizeMiniGoals(rawSubGoals, depth + 1) : undefined;
 
     miniGoals.push({
       id,

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { parseYouTubeVideoId } from "../../lib/audio";
 import type { RemoteTrackInfo, Track } from "../../types";
 
 interface YouTubePlayerProps {
@@ -20,6 +21,7 @@ interface YouTubePlayerInstance {
   getCurrentTime: () => number;
   getDuration: () => number;
   loadVideoById: (videoId: string | { videoId: string }) => void;
+  cueVideoById?: (videoId: string | { videoId: string }) => void;
   pauseVideo: () => void;
   playVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
@@ -112,9 +114,15 @@ export function YouTubePlayer({
     onTrackChange,
   };
 
-  const rawVideoId = track?.videoId;
+  const rawVideoId =
+    track?.videoId ??
+    (track?.source === "youtube"
+      ? (parseYouTubeVideoId(track.url ?? track.path ?? "") ?? undefined)
+      : undefined);
   const isVideoIdValid = Boolean(rawVideoId && /^[\w-]{11}$/.test(rawVideoId));
   const videoId = isVideoIdValid ? rawVideoId : undefined;
+  const desiredVideoIdRef = useRef<string | undefined>(videoId);
+  desiredVideoIdRef.current = videoId;
   const rawPlaylistId =
     track?.playlistId ??
     (track?.providerKind === "playlist" && track.providerId
@@ -238,15 +246,22 @@ export function YouTubePlayer({
         if (disposed || !hostRef.current || !playerMount.isConnected) return;
 
         const playerVars: Record<string, string | number> = {
-          autoplay: 0,
+          autoplay: playbackRef.current.playing ? 1 : 0,
           controls: 0,
           disablekb: 1,
+          enablejsapi: 1,
           fs: 0,
           modestbranding: 1,
           playsinline: 1,
-          origin: window.location.origin,
-          vq: "hd1080",
         };
+
+        if (
+          typeof window !== "undefined" &&
+          window.location.protocol.startsWith("http") &&
+          !window.location.protocol.startsWith("tauri")
+        ) {
+          playerVars.origin = window.location.origin;
+        }
 
         if (playlistId) {
           playerVars.listType = "playlist";
@@ -271,16 +286,30 @@ export function YouTubePlayer({
               ) {
                 event.target.setPlaybackRate(playbackRef.current.playbackRate);
               }
-              if (typeof event.target.setPlaybackQuality === "function") {
-                event.target.setPlaybackQuality("hd1080");
-              }
               const duration =
                 typeof event.target.getDuration === "function"
                   ? event.target.getDuration()
                   : 0;
               callbacksRef.current.onDuration(duration || 0);
               checkActiveVideo(event.target);
-              if (playbackRef.current.playing) resumeIfIntended(event.target);
+
+              const targetVideoId = desiredVideoIdRef.current;
+              if (
+                targetVideoId &&
+                targetVideoId !== currentPlayingVideoIdRef.current &&
+                !playlistId
+              ) {
+                currentPlayingVideoIdRef.current = targetVideoId;
+                if (playbackRef.current.playing) {
+                  if (typeof event.target.loadVideoById === "function") {
+                    event.target.loadVideoById(targetVideoId);
+                  }
+                } else if (typeof event.target.cueVideoById === "function") {
+                  event.target.cueVideoById(targetVideoId);
+                }
+              } else if (playbackRef.current.playing) {
+                resumeIfIntended(event.target);
+              }
             },
             onStateChange: (event) => {
               clearTrackEndedTimer();
@@ -289,8 +318,12 @@ export function YouTubePlayer({
               if (event.data === YOUTUBE_STATE_PLAYING) {
                 resumeAttempts = 0;
                 clearResumeTimer();
-                if (typeof event.target.setPlaybackQuality === "function") {
-                  event.target.setPlaybackQuality("hd1080");
+                const currentDuration =
+                  typeof event.target.getDuration === "function"
+                    ? event.target.getDuration()
+                    : 0;
+                if (currentDuration > 0) {
+                  callbacksRef.current.onDuration(currentDuration);
                 }
                 callbacksRef.current.onPlaying(true);
               }
@@ -380,6 +413,7 @@ export function YouTubePlayer({
   // Seamless video switching: if the player already exists and a different video
   // was selected (e.g. from the playlist list), switch video without destroying the iframe.
   useEffect(() => {
+    desiredVideoIdRef.current = videoId;
     const player = playerRef.current;
     if (!player || !videoId) return;
 
@@ -387,10 +421,14 @@ export function YouTubePlayer({
     if (currentPlayingVideoIdRef.current === videoId) return;
 
     currentPlayingVideoIdRef.current = videoId;
-    if (typeof player.loadVideoById === "function") {
-      player.loadVideoById(videoId);
-      if (playbackRef.current.playing) {
+    if (playbackRef.current.playing) {
+      if (typeof player.loadVideoById === "function") {
+        player.loadVideoById(videoId);
         player.playVideo();
+      }
+    } else {
+      if (typeof player.cueVideoById === "function") {
+        player.cueVideoById(videoId);
       }
     }
   }, [videoId]);
@@ -459,28 +497,59 @@ function loadYouTubeApi(): Promise<YouTubeApi> {
   if (youtubeApiPromise) return youtubeApiPromise;
 
   youtubeApiPromise = new Promise<YouTubeApi>((resolve, reject) => {
+    let resolved = false;
     const existingScript = document.querySelector(
       'script[src="https://www.youtube.com/iframe_api"]',
     );
     const previousReady = window.onYouTubeIframeAPIReady;
 
-    window.onYouTubeIframeAPIReady = () => {
-      previousReady?.();
-      if (window.YT?.Player) {
-        resolve(window.YT);
-      } else {
-        reject(new Error("YouTube API did not initialize."));
+    let pollTimer: number | null = null;
+    const cleanup = () => {
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
       }
     };
+
+    const handleReady = () => {
+      if (resolved) return;
+      if (window.YT?.Player) {
+        resolved = true;
+        cleanup();
+        resolve(window.YT);
+      }
+    };
+
+    window.onYouTubeIframeAPIReady = () => {
+      previousReady?.();
+      handleReady();
+    };
+
+    pollTimer = window.setInterval(() => {
+      if (window.YT?.Player) {
+        handleReady();
+      }
+    }, 100);
 
     if (existingScript) return;
 
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
     script.async = true;
-    script.onerror = () => reject(new Error("Could not load YouTube player."));
+    script.onerror = () => {
+      cleanup();
+      youtubeApiPromise = null;
+      reject(new Error("Could not load YouTube player."));
+    };
     document.head.appendChild(script);
   });
+
+  youtubeApiPromise.then(
+    () => undefined,
+    () => {
+      youtubeApiPromise = null;
+    },
+  );
 
   return youtubeApiPromise;
 }

@@ -129,4 +129,87 @@ describe("HubPanel", () => {
     expect(energeticBtn).not.toHaveClass("is-drop-target");
     expect(onMoveTrackToProfile).toHaveBeenCalledWith("track-1", "energizing");
   });
+
+  it("renders the profiles section with custom student profiles", () => {
+    const onSelectProfile = vi.fn();
+    const onCreateProfile = vi.fn();
+    render(
+      <HubPanel
+        {...createProps()}
+        profiles={[
+          {
+            id: "deep-work",
+            name: "Deep Work",
+            kind: "builtin",
+            theme: "deep",
+          },
+          {
+            id: "profile-ania-abc",
+            name: "Ania",
+            kind: "custom",
+            theme: "deep",
+          },
+        ]}
+        activeProfileId="profile-ania-abc"
+        onSelectProfile={onSelectProfile}
+        onCreateProfile={onCreateProfile}
+        onDeleteProfile={vi.fn()}
+      />,
+    );
+
+    // Each student profile is listed and selectable.
+    const aniaOption = screen.getByRole("option", { name: /ania/i });
+    expect(aniaOption).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("option", { name: /deep work/i }));
+    expect(onSelectProfile).toHaveBeenCalledWith("deep-work");
+
+    // The header shows the active student profile instead of a category.
+    expect(screen.getByText("FocusFlow · Ania")).toBeVisible();
+
+    // New student profiles can be created inline.
+    const nameInput = screen.getByRole("textbox", {
+      name: "New profile name",
+    });
+    fireEvent.change(nameInput, { target: { value: "Kuba" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
+    expect(onCreateProfile).toHaveBeenCalledWith("Kuba");
+  });
+
+  it("shows the active student profile name in the header subtitle", () => {
+    render(
+      <HubPanel
+        {...createProps()}
+        profiles={[
+          {
+            id: "deep-work",
+            name: "Deep Work",
+            kind: "builtin",
+            theme: "deep",
+          },
+          {
+            id: "energizing",
+            name: "Energizing",
+            kind: "builtin",
+            theme: "energizing",
+          },
+          {
+            id: "profile-kuba-xyz",
+            name: "Kuba",
+            kind: "custom",
+            theme: "deep",
+          },
+        ]}
+        activeProfileId="profile-kuba-xyz"
+      />,
+    );
+
+    expect(screen.getByText("FocusFlow · Kuba")).toBeVisible();
+    // Neither built-in category claims the active state for a student profile.
+    expect(
+      screen.getByRole("radio", { name: "Kategoria Chillowe" }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByRole("radio", { name: "Kategoria Energetyczne" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
 });

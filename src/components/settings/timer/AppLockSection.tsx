@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TimerSettings } from "../../../types";
 import { listRunningApps, type RunningApp } from "../../../lib/appLock";
 import { KaTeXTooltip } from "../../ui/KaTeXTooltip";
@@ -13,11 +13,19 @@ export function AppLockSection({ settings, onChange }: AppLockSectionProps) {
   const [apps, setApps] = useState<RunningApp[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const refresh = async () => {
     setLoading(true);
     setLoadError(false);
     const list = await listRunningApps();
+    if (!mountedRef.current) return;
     setApps(list);
     setLoading(false);
     if (list.length === 0) setLoadError(true);
@@ -84,7 +92,7 @@ export function AppLockSection({ settings, onChange }: AppLockSectionProps) {
           {apps.length > 0 ? (
             <ul className="app-lock-list">
               {apps.map((app) => (
-                <li key={app.processName}>
+                <li key={`${app.processName}:${app.windowTitle}`}>
                   <label className="app-lock-item">
                     <input
                       type="checkbox"

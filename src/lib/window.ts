@@ -16,23 +16,32 @@ export async function setWindowPinned(pinned: boolean): Promise<void> {
   if (isTauriRuntime()) {
     await applyNativeWindowState(pinned);
   }
-  localStorage.setItem(WINDOW_PIN_KEY, String(pinned));
-  if (!pinned) {
-    localStorage.removeItem(WINDOW_RESTORE_KEY);
+  try {
+    localStorage.setItem(WINDOW_PIN_KEY, String(pinned));
+    if (!pinned) {
+      localStorage.removeItem(WINDOW_RESTORE_KEY);
+    }
+  } catch {
+    // Private mode — native state already applied.
   }
 }
 
 export async function restoreWindowPin(): Promise<boolean> {
-  if (!isTauriRuntime() || localStorage.getItem(WINDOW_PIN_KEY) !== "true") {
-    return false;
+  // Pin automatically on startup as requested by user
+  if (isTauriRuntime()) {
+    try {
+      await applyNativeWindowState(true);
+      try {
+        localStorage.setItem(WINDOW_PIN_KEY, "true");
+      } catch {
+        // Ignore localStorage error in private mode
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
-
-  try {
-    await applyNativeWindowState(true);
-    return true;
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 async function applyNativeWindowState(pinned: boolean): Promise<void> {
@@ -74,12 +83,27 @@ async function applyNativeWindowState(pinned: boolean): Promise<void> {
       appWindow.outerSize(),
       appWindow.outerPosition(),
     ]);
-    writeRestoreWindowState({
-      x: windowPosition.x,
-      y: windowPosition.y,
-      width: windowSize.width,
-      height: windowSize.height,
-    });
+    // Guard double-click TOCTOU: only snapshot if the current window is
+    // clearly larger than the mini window (otherwise we'd persist the mini
+    // size and unpin would restore a tiny window).
+    if (
+      windowSize.width > MINI_WINDOW_WIDTH + 40 ||
+      windowSize.height > MINI_WINDOW_HEIGHT + 40
+    ) {
+      writeRestoreWindowState({
+        x: windowPosition.x,
+        y: windowPosition.y,
+        width: windowSize.width,
+        height: windowSize.height,
+      });
+    } else {
+      writeRestoreWindowState({
+        x: 100,
+        y: 100,
+        width: 1120,
+        height: 760,
+      });
+    }
   }
 
   await appWindow.setDecorations(false);
@@ -142,5 +166,9 @@ function readRestoreWindowState(): RestorableWindowState | null {
 }
 
 function writeRestoreWindowState(state: RestorableWindowState): void {
-  localStorage.setItem(WINDOW_RESTORE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(WINDOW_RESTORE_KEY, JSON.stringify(state));
+  } catch {
+    // Private mode — restore simply won't survive reload.
+  }
 }

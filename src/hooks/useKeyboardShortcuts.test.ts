@@ -21,6 +21,18 @@ describe("useKeyboardShortcuts", () => {
     expect(onSpeedDown).toHaveBeenCalledTimes(1);
   });
 
+  it("toggles shuffle on R key presses", () => {
+    const onToggleShuffle = vi.fn();
+
+    renderHook(() => useKeyboardShortcuts({ onToggleShuffle }));
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "r" }));
+    expect(onToggleShuffle).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "R" }));
+    expect(onToggleShuffle).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores hotkeys when typing in an input element", () => {
     const onSpeedUp = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSpeedUp }));

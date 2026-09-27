@@ -28,7 +28,8 @@ export const LibraryDropzone = memo(function LibraryDropzone({
     event.preventDefault();
     setDragActive(false);
     if (!busy) {
-      onDropFiles(Array.from(event.dataTransfer.files));
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length > 0) onDropFiles(files);
     }
   };
 

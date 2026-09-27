@@ -121,7 +121,7 @@ export interface PlayerSnapshot {
   durationPreset: DurationPreset;
   timerSettings?: TimerSettings;
   playbackRate?: number;
-  /** Loudness normalization (per-track gain from offline Web Audio analysis). */
-  volumeNormalization?: boolean;
+  /** Random (shuffle) queue order. */
+  shuffleEnabled?: boolean;
 }
 

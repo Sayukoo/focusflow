@@ -13,5 +13,9 @@ export async function ensureWindowsAutostart(): Promise<void> {
 
   // Re-register on every production launch so moving/updating the portable
   // executable also refreshes the Windows startup path.
-  await enable();
+  try {
+    await enable();
+  } catch {
+    // Autostart is optional (missing plugin / policy); never break startup.
+  }
 }

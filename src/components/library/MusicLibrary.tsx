@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolvePlaylistTracks } from "../../lib/audio";
 import { getTrackCategory, type TrackCategory } from "../../lib/gemini";
 import type { PlaybackQueue, Track } from "../../types";
@@ -83,6 +83,12 @@ export const MusicLibrary = memo(function MusicLibrary({
   const [genreFilter, setGenreFilter] = useState<GenreFilter>("all");
   const [draftAboutMe, setDraftAboutMe] = useState(userAboutMe ?? "");
   const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    };
+  }, []);
 
   // Drag & drop reordering state
   const [draggedTrackIndex, setDraggedTrackIndex] = useState<number | null>(null);
@@ -172,13 +178,18 @@ export const MusicLibrary = memo(function MusicLibrary({
   const handleSaveAboutMe = () => {
     onUserAboutMeChange?.(draftAboutMe);
     setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2000);
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setJustSaved(false), 2000);
   };
 
   const isAboutMeChanged = draftAboutMe !== (userAboutMe ?? "");
 
   useEffect(() => {
-    if (favoritesOnly) setActiveTab("favorites");
+    if (favoritesOnly) {
+      setActiveTab("favorites");
+    } else {
+      setActiveTab((prev) => (prev === "favorites" ? "featured" : prev));
+    }
   }, [favoritesOnly]);
 
   useEffect(() => {
@@ -420,7 +431,7 @@ export const MusicLibrary = memo(function MusicLibrary({
                           style={
                             group.thumbnail
                               ? {
-                                  backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${group.thumbnail}")`,
+                                  backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${group.thumbnail.replace(/"/g, "%22")}")`,
                                 }
                               : undefined
                           }
@@ -484,10 +495,11 @@ export const MusicLibrary = memo(function MusicLibrary({
 
                       {isExpanded && (
                         <div className="library-playlist-tracks-list" role="list">
-                          {group.tracks.map((t, idx) => {
+                          {(() => {
                             const activePlayingTrack = tracks.find(
                               (item) => item.id === currentTrackId,
                             );
+                            return group.tracks.map((t, idx) => {
                             const isCurrent =
                               t.id === currentTrackId ||
                               Boolean(
@@ -528,7 +540,7 @@ export const MusicLibrary = memo(function MusicLibrary({
                                     style={
                                       tArt
                                         ? {
-                                            backgroundImage: `url("${tArt}")`,
+                                            backgroundImage: `url("${tArt.replace(/"/g, "%22")}")`,
                                           }
                                         : undefined
                                     }
@@ -565,7 +577,8 @@ export const MusicLibrary = memo(function MusicLibrary({
                                 </div>
                               </div>
                             );
-                          })}
+                          });
+                          })()}
                         </div>
                       )}
                     </article>

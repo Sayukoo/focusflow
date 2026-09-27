@@ -58,6 +58,7 @@ export function TikTokPlayer({
       !/^\d+$/.test(track.providerId) ||
       !hostRef.current
     ) {
+      hostRef.current?.replaceChildren();
       iframeRef.current = null;
       return;
     }
@@ -79,6 +80,7 @@ export function TikTokPlayer({
     lastSeekTokenRef.current = null;
 
     const onMessage = (event: MessageEvent<TikTokPlayerMessage>) => {
+      if (event.origin !== "https://www.tiktok.com") return;
       if (event.source !== iframe.contentWindow) return;
       const message = event.data;
       if (!message || message["x-tiktok-player"] !== true) return;
@@ -122,7 +124,7 @@ export function TikTokPlayer({
       iframeRef.current = null;
       host.replaceChildren();
     };
-  }, [track?.id]);
+  }, [track?.id, track?.url, track?.providerId]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -165,6 +167,6 @@ function sendTikTokMessage(
       ...(typeof value === "number" ? { value } : {}),
       "x-tiktok-player": true,
     },
-    "*",
+    "https://www.tiktok.com",
   );
 }

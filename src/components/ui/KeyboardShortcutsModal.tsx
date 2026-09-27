@@ -22,6 +22,7 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
     title: "Odtwarzanie i Audio",
     items: [
       { keys: ["Spacja"], description: "Start / Pauza sesji i audio" },
+      { keys: ["R"], description: "Losowe odtwarzanie wł. / wył. (shuffle)" },
       { keys: ["→", "N"], description: "Następny utwór" },
       { keys: ["←", "P"], description: "Poprzedni utwór" },
       { keys: ["[", "]"], description: "Zwolnij / Przyspiesz muzykę (±10%)" },

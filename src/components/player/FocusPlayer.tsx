@@ -16,6 +16,7 @@ import {
   type MiniGoal,
   type PlaybackQueue,
   type RemoteTrackInfo,
+  type TimerKind,
   type TimerPhase,
   type TimerSettings,
   type Track,
@@ -82,11 +83,10 @@ interface FocusPlayerProps {
   onTogglePlay: () => void | Promise<void>;
   onNext: () => void | Promise<void>;
   onPrevious: () => void | Promise<void>;
+  shuffleEnabled?: boolean;
+  onToggleShuffle?: () => void;
   onVolume: (value: number) => void;
   onPlaybackRateChange?: (rate: number) => void;
-  /** Loudness normalization master switch (persisted in the snapshot). */
-  volumeNormalization?: boolean;
-  onToggleVolumeNormalization?: () => void;
   onSeek: (seconds: number) => void;
   onRemotePlaying: (playing: boolean) => void;
   onRemoteTime: (time: number) => void;
@@ -146,10 +146,10 @@ export function FocusPlayer({
   onTogglePlay,
   onNext,
   onPrevious,
+  shuffleEnabled = false,
+  onToggleShuffle,
   onVolume,
   onPlaybackRateChange,
-  volumeNormalization,
-  onToggleVolumeNormalization,
   onSeek,
   onRemotePlaying,
   onRemoteTime,
@@ -200,6 +200,7 @@ export function FocusPlayer({
     onTogglePlay: () => void onTogglePlay(),
     onNext: () => void onNext(),
     onPrevious: () => void onPrevious(),
+    onToggleShuffle: () => onToggleShuffle?.(),
     onToggleLibrary: () => (hubOpen ? onCloseHub() : onOpenHub()),
     onToggleTimer: () =>
       timerSettingsOpen ? onCloseTimerSettings() : openFullTimerSettings(),
@@ -350,24 +351,72 @@ export function FocusPlayer({
     "goal" | "subtask"
   >("goal");
 
-  const handleQuickPomodoro = useCallback(() => {
-    const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
-    updateFn?.({
-      ...timerSettings,
-      kind: "intervals",
-      durationMinutes: 25,
-      workDurationMinutes: 25,
-      breakDurationMinutes: 5,
-    });
-    setTimerSettingsCompact(true);
-    setTimerSettingsFocus("goal");
-    onOpenTimerSettings("goal");
-  }, [
-    onChangeTimerSettings,
-    onOpenTimerSettings,
-    onTimerSettingsChange,
-    timerSettings,
-  ]);
+  const [inlineGoalDraft, setInlineGoalDraft] = useState(timerSettings.goal);
+  const [isEditingGoal, setIsEditingGoal] = useState(!timerSettings.goal);
+  const inlineGoalInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setInlineGoalDraft(timerSettings.goal);
+    if (!timerSettings.goal) {
+      setIsEditingGoal(true);
+    }
+  }, [timerSettings.goal]);
+
+  useEffect(() => {
+    if (isEditingGoal && !timerSettings.goal) {
+      inlineGoalInputRef.current?.focus();
+    }
+  }, [isEditingGoal, timerSettings.goal]);
+
+  const commitInlineGoal = useCallback(() => {
+    const trimmed = inlineGoalDraft.trim();
+    setIsEditingGoal(false);
+    if (trimmed !== timerSettings.goal) {
+      const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+      updateFn?.({
+        ...timerSettings,
+        goal: trimmed,
+      });
+    }
+  }, [inlineGoalDraft, onChangeTimerSettings, onTimerSettingsChange, timerSettings]);
+
+  const durationForGoal =
+    timerSettings.kind === "timer"
+      ? (timerSettings.durationMinutes ?? 25)
+      : timerSettings.workDurationMinutes;
+  const goalPlaceholder =
+    timerSettings.kind === "infinite"
+      ? "Co chcesz teraz zrobić?…"
+      : `Co chcesz zrobić przez kolejne ${durationForGoal} minut?…`;
+
+  const handleSelectMode = useCallback(
+    (kind: TimerKind) => {
+      const updateFn = onTimerSettingsChange ?? onChangeTimerSettings;
+      if (kind === "intervals") {
+        updateFn?.({
+          ...timerSettings,
+          kind: "intervals",
+          workDurationMinutes: timerSettings.workDurationMinutes || 25,
+          breakDurationMinutes: timerSettings.breakDurationMinutes || 5,
+          durationMinutes: timerSettings.workDurationMinutes || 25,
+        });
+      } else if (kind === "timer") {
+        updateFn?.({
+          ...timerSettings,
+          kind: "timer",
+          durationMinutes: timerSettings.durationMinutes ?? 25,
+        });
+      } else if (kind === "infinite") {
+        updateFn?.({
+          ...timerSettings,
+          kind: "infinite",
+          durationMinutes: null,
+        });
+      }
+    },
+    [onChangeTimerSettings, onTimerSettingsChange, timerSettings],
+  );
+
 
   const openFullTimerSettings = useCallback(
     (focus: "goal" | "subtask" = "goal") => {
@@ -533,24 +582,54 @@ export function FocusPlayer({
     [requestCategory],
   );
 
-  const quickPomodoroControl = useMemo(
-    () =>
-      !isBreakPhase ? (
-        <KaTeXTooltip
-          wrapperClassName="quick-pomodoro-control"
-          formula="\text{25 min pracy / 5 min przerwy}"
-        >
+  const modeSwitcherControl = useMemo(
+    () => (
+      <div
+        className="quick-pomodoro-control mode-switcher-pill"
+        role="group"
+        aria-label="Wybór trybu timera"
+      >
+        <KaTeXTooltip formula="\text{Interwały Pomodoro (25/5)}">
           <button
             type="button"
-            className="quick-pomodoro-btn"
-            aria-label="Ustaw Pomodoro 25 minut pracy, 5 minut przerwy"
-            onClick={handleQuickPomodoro}
+            className={`mode-switch-btn ${timerSettings.kind === "intervals" ? "is-active" : ""}`}
+            aria-label="Tryb interwałów"
+            aria-pressed={timerSettings.kind === "intervals"}
+            onClick={() => handleSelectMode("intervals")}
           >
-            25 / 5
+            <Icon name="intervals" size={13} />
+            <span className="mode-switch-text">Interwały</span>
           </button>
         </KaTeXTooltip>
-      ) : undefined,
-    [handleQuickPomodoro, isBreakPhase],
+
+        <KaTeXTooltip formula="\text{Minutnik sesji}">
+          <button
+            type="button"
+            className={`mode-switch-btn ${timerSettings.kind === "timer" ? "is-active" : ""}`}
+            aria-label="Tryb minutnika"
+            aria-pressed={timerSettings.kind === "timer"}
+            onClick={() => handleSelectMode("timer")}
+          >
+            <Icon name="stopwatch" size={13} />
+            <span className="mode-switch-text">Minutnik</span>
+          </button>
+        </KaTeXTooltip>
+
+        <KaTeXTooltip formula="\text{Tryb ciągły (∞)}">
+          <button
+            type="button"
+            className={`mode-switch-btn ${timerSettings.kind === "infinite" ? "is-active" : ""}`}
+            aria-label="Tryb ciągły"
+            aria-pressed={timerSettings.kind === "infinite"}
+            onClick={() => handleSelectMode("infinite")}
+          >
+            <Icon name="infinity" size={13} />
+            <span className="mode-switch-text">Ciągły</span>
+          </button>
+        </KaTeXTooltip>
+      </div>
+    ),
+    [handleSelectMode, timerSettings.kind],
   );
 
   const handleTimerTap = () => {
@@ -588,7 +667,9 @@ export function FocusPlayer({
       />
       <div className="focus-atmosphere" aria-hidden="true" />
       <div className="focus-vignette" aria-hidden="true" />
-      {confettiBursting ? <ConfettiOverlay burstId={confettiBurstId} /> : null}
+      {confettiBursting ? (
+        <ConfettiOverlay key={confettiBurstId} burstId={confettiBurstId} />
+      ) : null}
 
       <header className="focus-top">
         <div className="focus-top-left">
@@ -608,7 +689,7 @@ export function FocusPlayer({
           onOpenTimerSettings={openFullTimerSettings}
           onOpenMobileMenu={openMobileMenu}
           mobileMenuOpen={mobileMenuOpen}
-          leading={quickPomodoroControl}
+          leading={modeSwitcherControl}
         />
       </header>
 
@@ -619,7 +700,6 @@ export function FocusPlayer({
         trackCount={tracks.length}
         favoritesOnly={favoritesOnly}
         volume={volume}
-        isPlaying={isPlaying}
         windowPinned={windowPinned}
         windowPinAvailable={windowPinAvailable}
         analyticsSummary={analyticsSummary}
@@ -631,32 +711,68 @@ export function FocusPlayer({
         onOpenShortcuts={() => setHotkeysModalOpen(true)}
         onSetFavoritesOnly={onSetFavoritesOnly}
         onVolume={onVolume}
-        onTogglePlay={onTogglePlay}
         onSetWindowPinned={onSetWindowPinned}
       />
 
       <main className="focus-center">
         <div
           className="timer-display"
-          aria-label={`Timer ${timerLabel}`}
+          role="button"
+          tabIndex={0}
+          aria-label={`Timer ${timerLabel}. Activate to open timer settings`}
           onClick={handleTimerTap}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleTimerTap();
+            }
+          }}
         >
           {timerLabel}
         </div>
 
         {!isBreakPhase ? (
-          <button
-            type="button"
-            className={`timer-goal-text-btn ${!timerSettings.goal ? "is-placeholder" : ""}`}
-            onClick={() => openFullTimerSettings("goal")}
-            aria-label={
-              timerSettings.goal
-                ? `Main task: ${timerSettings.goal}. Click to edit`
-                : "Set main task"
-            }
-          >
-            {timerSettings.goal || "Set main task…"}
-          </button>
+          timerSettings.goal && !isEditingGoal ? (
+            <button
+              type="button"
+              className="timer-goal-text-btn"
+              onClick={() => openFullTimerSettings("goal")}
+              aria-label={`Główne zadanie: ${timerSettings.goal}. Kliknij, aby edytować`}
+            >
+              {timerSettings.goal}
+            </button>
+          ) : (
+            <form
+              className="timer-goal-inline-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                commitInlineGoal();
+              }}
+            >
+              <input
+                ref={inlineGoalInputRef}
+                type="text"
+                className="timer-goal-input"
+                value={inlineGoalDraft}
+                placeholder={goalPlaceholder}
+                aria-label="Stwórz główne zadanie"
+                maxLength={300}
+                autoFocus
+                onChange={(e) => setInlineGoalDraft(e.target.value)}
+                onBlur={commitInlineGoal}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitInlineGoal();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setInlineGoalDraft(timerSettings.goal);
+                    setIsEditingGoal(false);
+                  }
+                }}
+              />
+            </form>
+          )
         ) : (
           <div className="timer-goal-break-banner">
             ☕ Korzystaj z przerwy!
@@ -720,35 +836,11 @@ export function FocusPlayer({
           onPrevious={onPrevious}
           onSeek={onSeek}
           onPlaybackRateChange={onPlaybackRateChange}
+          shuffleEnabled={shuffleEnabled}
+          onToggleShuffle={onToggleShuffle}
         />
 
         <div className="focus-controls focus-stats">
-          {onToggleVolumeNormalization ? (
-            <KaTeXTooltip
-              formula={`\\text{Normalizacja: ${volumeNormalization ? "Włączona (Wyrównana)" : "Wyłączona (Pełny bas & dynamika)"}}`}
-            >
-              <button
-                type="button"
-                className={
-                  volumeNormalization ? "norm-toggle is-active" : "norm-toggle"
-                }
-                aria-pressed={Boolean(volumeNormalization)}
-                aria-label={
-                  volumeNormalization
-                    ? "Normalizacja głośności włączona"
-                    : "Normalizacja głośności wyłączona (pełna dynamika i bas)"
-                }
-                title={
-                  volumeNormalization
-                    ? "Normalizacja głośności: Włączona"
-                    : "Normalizacja głośności: Wyłączona (pełny bas i dynamika)"
-                }
-                onClick={onToggleVolumeNormalization}
-              >
-                <Icon name="gauge" size={17} />
-              </button>
-            </KaTeXTooltip>
-          ) : null}
           <KaTeXTooltip formula={`\\text{Volume: ${Math.round(volume * 100)}\\%}`}>
             <div className="volume" aria-label="Volume strip">
               <Icon name="volume" size={18} />

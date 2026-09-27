@@ -42,7 +42,7 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
     const art = currentTrack?.thumbnailDataUrl ?? currentTrack?.thumbnail;
     if (!art) return undefined;
     return {
-      backgroundImage: `linear-gradient(135deg, rgba(20, 30, 48, 0.2), rgba(10, 15, 25, 0.6)), url("${art}")`,
+      backgroundImage: `linear-gradient(135deg, rgba(20, 30, 48, 0.2), rgba(10, 15, 25, 0.6)), url("${art.replace(/"/g, "%22")}")`,
     };
   }, [currentTrack?.thumbnail, currentTrack?.thumbnailDataUrl]);
 
@@ -52,7 +52,7 @@ export const TrackMetaDisplay = memo(function TrackMetaDisplay({
     if (currentTrack.source === "spotify") return "Spotify";
     if (currentTrack.source === "soundcloud") return "SoundCloud";
     if (currentTrack.source === "tiktok") return "TikTok";
-    return `${currentTrack.extension.toUpperCase()} file`;
+    return `${(currentTrack.extension ?? "audio").toUpperCase()} file`;
   }, [currentTrack]);
 
   const categoryLabel = useMemo(() => {

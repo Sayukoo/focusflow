@@ -564,7 +564,7 @@ export function useTrackLibrary({
             saveRemoteTracks(remoteTracksRef.current);
           }
         } else if (runningInTauri && !sharedWithOtherProfile) {
-          await invoke("delete_track", { trackId: track.id });
+          await invoke("delete_track", { path: track.id });
         }
 
         const nextStore = sharedWithOtherProfile

@@ -6,7 +6,7 @@
 
 ## 1. What is FocusFlow?
 
-A **desktop focus-music player** built with **Tauri 2 + React 18 + TypeScript**.
+A **desktop focus-music player** built with **Tauri 2 + React 19 + TypeScript**.
 It lets the user play local music files or remote tracks (YouTube / Spotify / SoundCloud / TikTok) while running a focus timer with Gemini-generated subtasks (mini-goals). Think Brain.fm, self-hosted.
 
 **Key UX ideas:**
@@ -23,7 +23,7 @@ It lets the user play local music files or remote tracks (YouTube / Spotify / So
 | Layer | Technology |
 |---|---|
 | Native shell | Tauri 2 (Rust) |
-| Frontend | React 18, TypeScript |
+| Frontend | React 19, TypeScript |
 | Build | Vite |
 | CSS | Single vanilla CSS file (`src/styles.css`) — **no Tailwind** |
 | AI | Google Gemini API (`VITE_GEMINI_API_KEY` in `.env.local`) |
@@ -206,13 +206,7 @@ useAudioLibrary()  (hooks/useAudioLibrary.ts)
 
 ## 7. CSS architecture
 
-Master entry point: **`src/styles.css`**, modularized into domain files under **`src/styles/`** (vanilla CSS only, no Tailwind, no preprocessor):
-- `src/styles/base.css` — Reset, design tokens, atmosphere, animated thumbnail background, icon primitives, KaTeX tooltips
-- `src/styles/player.css` — Root grid layout (`.focus-shell`), center timer display, main mini-goals checklist, playback transport controls, volume, track meta, remote players
-- `src/styles/library.css` — Music library drawer, track cards, search bar, genre filter tabs, link modal
-- `src/styles/settings.css` — Timer settings modal, profile picker & AI context editor, shortcuts modal, daily goals card
-- `src/styles/menu.css` — Mobile menu drawer & navigation items
-- `src/styles/pinned.css` — Compact pinned window mode overrides (`.focus-shell.is-window-pinned`) & compact pin-mode navigation menu
+Master entry point: **`src/styles.css`** — single vanilla CSS file (~7000 lines, no Tailwind, no preprocessor). Sections are separated by comments (base / player / library / settings / menu / pinned).
 
 **z-index layers (low → high):**
 1. `thumbnail-bg` (z-index: 0)
@@ -241,7 +235,7 @@ Master entry point: **`src/styles.css`**, modularized into domain files under **
 | `npm run tauri dev` | Dev server + Tauri window |
 | `npm run build` | Vite + tsc production build |
 | `npm run typecheck` | `tsc --noEmit` only |
-| `npm test` | Vitest (63 tests) |
+| `npm test` | Vitest (137 tests, 19 files) |
 | `npm run release:build` | Full release: icons + Rust + portable .exe |
 
 **Test files live next to the files they test** (`src/lib/gemini.ts` → `src/lib/gemini.test.ts`), except component tests which live in `src/components/*.test.tsx`.

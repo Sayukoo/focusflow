@@ -12,6 +12,11 @@ import {
   savePlayerSnapshot,
 } from "../lib/audio";
 import {
+  loadShuffleEnabled,
+  pickRandomTrackIndex,
+  saveShuffleEnabled,
+} from "../lib/shuffle";
+import {
   elapsedSecondsFromMs,
   getIntervalPhase,
   isFocusAnalyticsEligible,
@@ -82,22 +87,12 @@ export function useAudioLibrary() {
     getVolume: () => engine.volumeRef.current,
   });
 
-  // Default to false so tracks play with untouched, full dynamic range and bass.
-  const [volumeNormalization, setVolumeNormalizationState] = useState(false);
-  const setVolumeNormalization = useCallback((enabled: boolean) => {
-    setVolumeNormalizationState(Boolean(enabled));
-  }, []);
-  const toggleVolumeNormalization = useCallback(() => {
-    setVolumeNormalizationState((value) => !value);
-  }, []);
-
   const runningInTauri = useMemo(() => isTauriRuntime(), []);
 
   const engine = useAudioPlaybackEngine({
     runningInTauri,
     startSession,
     duckingMultiplier,
-    normalizationEnabled: volumeNormalization,
   });
 
   // Stable per-field bindings (the engine object itself is a fresh literal
@@ -137,9 +132,27 @@ export function useAudioLibrary() {
   const [timerSettingsOpen, setTimerSettingsOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
 
+  // Shuffle (losowe odtwarzanie): when enabled, "next" and auto-advance pick
+  // a random track from the active queue instead of the following one.
+  const [shuffleEnabled, setShuffleEnabled] = useState(() =>
+    loadShuffleEnabled(),
+  );
+  const shuffleEnabledRef = useRef(shuffleEnabled);
+
+  const toggleShuffle = useCallback(() => {
+    setShuffleEnabled((previous) => {
+      const next = !previous;
+      shuffleEnabledRef.current = next;
+      saveShuffleEnabled(next);
+      return next;
+    });
+  }, []);
+
   const openHub = useCallback(() => {
     setHubOpen(true);
   }, []);
+
+  // Exposed so UI can toggle shuffle (also fixes TS6133 + enables persistence).
 
   const favoritesOnly = playbackQueue.kind === "favorites";
 
@@ -221,6 +234,7 @@ export function useAudioLibrary() {
   // useAudioPlaybackEngine now. Here we only restore persisted settings and
   // kick off the initial library load.
   useEffect(() => {
+    let mounted = true;
     const snapshot = loadPlayerSnapshot();
     if (typeof snapshot.volume === "number") {
       const nextVolume = Math.min(1, Math.max(0, snapshot.volume));
@@ -233,8 +247,9 @@ export function useAudioLibrary() {
       const restoredRate = Math.min(2.0, Math.max(0.5, snapshot.playbackRate));
       engine.setPlaybackRate(restoredRate);
     }
-    if (typeof snapshot.volumeNormalization === "boolean") {
-      setVolumeNormalization(snapshot.volumeNormalization);
+    if (typeof snapshot.shuffleEnabled === "boolean") {
+      shuffleEnabledRef.current = snapshot.shuffleEnabled;
+      setShuffleEnabled(snapshot.shuffleEnabled);
     }
     if (snapshot.timerSettings !== undefined) {
       const restoredSettings = normalizeTimerSettings(snapshot.timerSettings);
@@ -284,6 +299,7 @@ export function useAudioLibrary() {
           await invoke("ensure_music_dir");
         }
         const listed = await library.refresh();
+        if (!mounted) return;
         const preferred =
           typeof snapshot.currentTrackId === "string"
             ? listed.find((track) => track.id === snapshot.currentTrackId)
@@ -292,11 +308,15 @@ export function useAudioLibrary() {
           await engine.loadTrack(preferred, false);
         }
       } catch (err) {
+        if (!mounted) return;
         library.setError(err instanceof Error ? err.message : String(err));
       } finally {
-        engine.setReady(true);
+        if (mounted) engine.setReady(true);
       }
     })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Keep the engine's auto-advance resolver fresh every render (cheap ref
@@ -305,7 +325,9 @@ export function useAudioLibrary() {
     engine.resolveAutoNextRef.current = () => {
       const list = filterTracksForQueue(playbackQueueRef.current);
       const index = findTrackIndex(list, engine.currentIdRef.current);
-      const next = nextTrackIndex(index, list.length);
+      const next = shuffleEnabledRef.current
+        ? pickRandomTrackIndex(index, list.length)
+        : nextTrackIndex(index, list.length);
       return next >= 0 ? list[next] : null;
     };
   });
@@ -331,7 +353,7 @@ export function useAudioLibrary() {
             : 60,
       timerSettings,
       playbackRate: engine.playbackRate,
-      volumeNormalization,
+      shuffleEnabled,
     });
   }, [
     engine.ready,
@@ -340,7 +362,7 @@ export function useAudioLibrary() {
     engine.mode,
     timerSettings,
     engine.playbackRate,
-    volumeNormalization,
+    shuffleEnabled,
   ]);
 
   const syncTimerClock = useCallback(() => {
@@ -486,9 +508,12 @@ export function useAudioLibrary() {
         );
         track = resolved.find((item) => item.id === trackId);
         if (track) {
-          const updated = [...library.tracksRef.current, track];
-          library.tracksRef.current = updated;
-          library.setTracks(updated);
+          const list = library.tracksRef.current;
+          if (!list.some((item) => item.id === track!.id)) {
+            const updated = [...list, track];
+            library.tracksRef.current = updated;
+            library.setTracks(updated);
+          }
         }
       }
       if (!track) return;
@@ -578,7 +603,9 @@ export function useAudioLibrary() {
     async (forceAutoplay = false) => {
       const list = getPlaybackTracks();
       const index = findTrackIndex(list, currentIdRef.current);
-      const next = nextTrackIndex(index, list.length);
+      const next = shuffleEnabledRef.current
+        ? pickRandomTrackIndex(index, list.length)
+        : nextTrackIndex(index, list.length);
       if (next >= 0) {
         await loadTrack(
           list[next],
@@ -789,7 +816,7 @@ export function useAudioLibrary() {
 
     if (timerSettings.kind === "intervals") {
       const phaseState = getIntervalPhase(elapsedMs, timerSettings);
-      const s = Math.floor(phaseState.phaseRemainingMs / 1000);
+      const s = Math.ceil(phaseState.phaseRemainingMs / 1000);
       const m = Math.floor(s / 60);
       return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
     }
@@ -797,7 +824,7 @@ export function useAudioLibrary() {
     const durationMinutes = timerSettings.durationMinutes ?? 60;
     const totalMs = durationMinutes * 60 * 1000;
     const remainingMs = Math.max(0, totalMs - elapsedMs);
-    const s = Math.floor(remainingMs / 1000);
+    const s = Math.ceil(remainingMs / 1000);
     const m = Math.floor(s / 60);
     return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }, [elapsed, timerSettings]);
@@ -805,6 +832,17 @@ export function useAudioLibrary() {
   const resetSession = useCallback(() => {
     resetTimerClock(timerClockRef.current);
     setElapsed(0);
+    // Reset cue baseline so the next tick re-announces the current phase
+    // instead of treating it as already announced (skipped cue after reset).
+    const current = timerSettingsRef.current;
+    lastAnnouncedPhaseRef.current = {
+      kind: current.kind,
+      phase:
+        current.kind === "intervals"
+          ? getIntervalPhase(0, current).phase
+          : null,
+      cycleIndex: current.kind === "intervals" ? 0 : null,
+    };
     setTimerSettings((prev) => ({
       ...prev,
       miniGoals: resetMiniGoalProgress(prev.miniGoals),
@@ -812,7 +850,7 @@ export function useAudioLibrary() {
         ? resetMiniGoalProgress(prev.breakMiniGoals)
         : [],
     }));
-  }, [setElapsed, setTimerSettings, timerClockRef]);
+  }, [setElapsed, setTimerSettings, timerClockRef, timerSettingsRef, lastAnnouncedPhaseRef]);
 
   const seek = useCallback(
     (value: number) => {
@@ -916,8 +954,8 @@ export function useAudioLibrary() {
     setVolume: engine.setVolume,
     playbackRate: engine.playbackRate,
     setPlaybackRate: engine.setPlaybackRate,
-    volumeNormalization,
-    toggleVolumeNormalization,
+    shuffleEnabled,
+    toggleShuffle,
     toggleFavorite,
     playQueue,
     setFavoritesOnly: setFavoritesQueue,

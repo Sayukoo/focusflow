@@ -124,7 +124,7 @@ export const TrackCard = memo(function TrackCard({
             style={
               (track.thumbnailDataUrl ?? track.thumbnail)
                 ? {
-                    backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${track.thumbnailDataUrl ?? track.thumbnail}")`,
+                    backgroundImage: `linear-gradient(135deg, rgba(14, 25, 45, 0.18), rgba(17, 9, 28, 0.5)), url("${(track.thumbnailDataUrl ?? track.thumbnail ?? "").replace(/"/g, "%22")}")`,
                   }
                 : undefined
             }
@@ -252,7 +252,7 @@ export const TrackCard = memo(function TrackCard({
       </KaTeXTooltip>
       <KaTeXTooltip
         placement="left"
-        formula={`\\text{Delete from profile:}~\\texttt{${escapeTex(track.filename)}}`}
+        formula={`\\text{Delete from profile:}~\\texttt{${escapeTex(track.filename ?? track.title ?? "track")}}`}
       >
         <button
           type="button"
@@ -284,5 +284,5 @@ function getSourceLabel(track: Track): string {
   if (track.source === "spotify") return "Spotify";
   if (track.source === "soundcloud") return "SoundCloud";
   if (track.source === "tiktok") return "TikTok";
-  return `${track.extension.toUpperCase()} · local`;
+  return `${(track.extension ?? "audio").toUpperCase()} · local`;
 }

@@ -84,7 +84,7 @@ export function MobileMenuAnalytics({
             <div className="analytics-chart-bars">
               {weeklyStats.days.map((day) => {
                 const heightPercent =
-                  day.focusTimeSeconds > 0
+                  weeklyStats.maxSeconds > 0 && day.focusTimeSeconds > 0
                     ? Math.min(
                         100,
                         Math.max(

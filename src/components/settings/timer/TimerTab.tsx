@@ -5,6 +5,7 @@ interface TimerTabProps {
   active: boolean;
   icon: "infinity" | "stopwatch" | "intervals";
   label: string;
+  ariaLabel?: string;
   reducedMotion: boolean;
   onClick: () => void;
 }
@@ -13,6 +14,7 @@ export function TimerTab({
   active,
   icon,
   label,
+  ariaLabel,
   reducedMotion,
   onClick,
 }: TimerTabProps) {
@@ -21,7 +23,7 @@ export function TimerTab({
       type="button"
       role="tab"
       aria-selected={active}
-      aria-label={label}
+      aria-label={ariaLabel ?? label}
       className={active ? "timer-tab is-active" : "timer-tab"}
       onClick={onClick}
     >

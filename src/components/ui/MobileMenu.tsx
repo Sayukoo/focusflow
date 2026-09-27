@@ -21,7 +21,6 @@ interface MobileMenuProps {
   trackCount: number;
   favoritesOnly: boolean;
   volume: number;
-  isPlaying: boolean;
   windowPinned: boolean;
   windowPinAvailable: boolean;
   analyticsSummary?: FocusAnalyticsSummary;
@@ -33,7 +32,6 @@ interface MobileMenuProps {
   onOpenShortcuts?: () => void;
   onSetFavoritesOnly: (enabled: boolean) => void;
   onVolume: (value: number) => void;
-  onTogglePlay: () => void | Promise<void>;
   onSetWindowPinned: (pinned: boolean) => void | Promise<void>;
 }
 
@@ -55,7 +53,6 @@ export const MobileMenu = memo(function MobileMenu({
   trackCount,
   favoritesOnly,
   volume,
-  isPlaying,
   windowPinned,
   windowPinAvailable,
   analyticsSummary,
@@ -67,7 +64,6 @@ export const MobileMenu = memo(function MobileMenu({
   onOpenShortcuts,
   onSetFavoritesOnly,
   onVolume,
-  onTogglePlay,
   onSetWindowPinned,
 }: MobileMenuProps) {
   const shouldReduceMotion = useReducedMotion() ?? false;
@@ -203,162 +199,130 @@ export const MobileMenu = memo(function MobileMenu({
               </button>
             </header>
 
-            <nav className="mobile-menu-list" aria-label="Quick controls">
+            <nav className="mobile-menu-grid" aria-label="Quick controls">
               <button
                 type="button"
-                className={`mobile-menu-item mobile-menu-item--session ${isPlaying ? "is-playing" : ""}`}
-                onClick={() => void onTogglePlay()}
-              >
-                <span className="mobile-menu-item-icon" aria-hidden="true">
-                  <Icon name={isPlaying ? "pause" : "play"} size={19} />
-                </span>
-                <span className="mobile-menu-item-copy">
-                  <strong>{isPlaying ? "Pause session" : "Start session"}</strong>
-                  <small>Timer + audio</small>
-                </span>
-                <Icon name="chevron-down" size={16} className="mobile-menu-arrow" />
-              </button>
-
-              <button
-                type="button"
-                className="mobile-menu-item mobile-menu-item--timer"
+                className="mobile-menu-icon-btn"
                 onClick={onOpenTimer}
+                title={`Timer — ${durationLabel}`}
+                aria-label={`Timer — ${durationLabel}`}
               >
-                <span className="mobile-menu-item-icon" aria-hidden="true">
+                <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
                   <Icon name="stopwatch" size={20} />
                 </span>
-                <span className="mobile-menu-item-copy">
-                  <strong>Timer</strong>
-                  <small>{durationLabel}</small>
-                </span>
-                <Icon name="chevron-down" size={16} className="mobile-menu-arrow" />
+                <span className="mobile-menu-icon-btn-label">Timer</span>
               </button>
 
               <button
                 type="button"
-                className="mobile-menu-item mobile-menu-item--library"
+                className="mobile-menu-icon-btn"
                 onClick={onOpenLibrary}
+                title={`Music library — ${trackCount} tracks`}
+                aria-label={`Music library — ${trackCount} tracks`}
               >
-                <span className="mobile-menu-item-icon" aria-hidden="true">
+                <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
                   <Icon name="library" size={20} />
                 </span>
-                <span className="mobile-menu-item-copy">
-                  <strong>Music library</strong>
-                  <small>{trackCount} tracks</small>
-                </span>
-                <Icon name="chevron-down" size={16} className="mobile-menu-arrow" />
+                <span className="mobile-menu-icon-btn-label">Library</span>
               </button>
 
               <button
                 type="button"
-                className="mobile-menu-item mobile-menu-item--profile"
+                className="mobile-menu-icon-btn"
                 onClick={onOpenProfiles}
+                title={`Profile — ${profileLabel}`}
+                aria-label={`Profile — ${profileLabel}`}
               >
-                <span
-                  className="mobile-menu-item-icon mobile-menu-profile-dot"
-                  aria-hidden="true"
-                />
-                <span className="mobile-menu-item-copy">
-                  <strong>Profile</strong>
-                  <small>{profileLabel}</small>
+                <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
+                  <Icon name="user" size={19} />
                 </span>
-                <Icon name="chevron-down" size={16} className="mobile-menu-arrow" />
+                <span className="mobile-menu-icon-btn-label">Profile</span>
               </button>
 
               <button
                 type="button"
                 className={
                   favoritesOnly
-                    ? "mobile-menu-item mobile-menu-item--favorites is-active"
-                    : "mobile-menu-item mobile-menu-item--favorites"
+                    ? "mobile-menu-icon-btn is-active"
+                    : "mobile-menu-icon-btn"
                 }
                 aria-pressed={favoritesOnly}
                 onClick={() => onSetFavoritesOnly(!favoritesOnly)}
+                title={favoritesOnly ? "Favorites only — on" : "Favorites only — off"}
+                aria-label={favoritesOnly ? "Favorites only — on" : "Favorites only — off"}
               >
-                <span className="mobile-menu-item-icon" aria-hidden="true">
+                <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
                   <Icon name="heart" size={19} />
                 </span>
-                <span className="mobile-menu-item-copy">
-                  <strong>Favorites queue</strong>
-                  <small>{favoritesOnly ? "Enabled" : "All tracks"}</small>
-                </span>
+                <span className="mobile-menu-icon-btn-label">Favs</span>
                 <span
-                  className="mobile-menu-check"
+                  className="mobile-menu-icon-btn-dot"
                   aria-hidden="true"
-                >
-                  {favoritesOnly ? <Icon name="check" size={16} /> : null}
+                />
+              </button>
+
+              <button
+                type="button"
+                className={
+                  windowPinned
+                    ? "mobile-menu-icon-btn is-active"
+                    : "mobile-menu-icon-btn"
+                }
+                aria-pressed={windowPinned}
+                disabled={!windowPinAvailable}
+                onClick={() => void onSetWindowPinned(!windowPinned)}
+                title={
+                  windowPinAvailable
+                    ? windowPinned
+                      ? "Unpin window"
+                      : "Pin top-right — always on top"
+                    : "Pin available in desktop app only"
+                }
+                aria-label={
+                  windowPinned ? "Unpin window" : "Pin window on top"
+                }
+              >
+                <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
+                  <Icon name="pin" size={19} />
                 </span>
+                <span className="mobile-menu-icon-btn-label">Pin</span>
+                <span
+                  className="mobile-menu-icon-btn-dot"
+                  aria-hidden="true"
+                />
               </button>
 
               {onOpenShortcuts ? (
                 <button
                   type="button"
-                  className="mobile-menu-item mobile-menu-item--shortcuts"
+                  className="mobile-menu-icon-btn"
                   onClick={() => {
                     onClose();
                     onOpenShortcuts();
                   }}
+                  title="Keyboard shortcuts (?)"
+                  aria-label="Keyboard shortcuts"
                 >
-                  <span className="mobile-menu-item-icon" aria-hidden="true">
+                  <span className="mobile-menu-icon-btn-icon" aria-hidden="true">
                     <Icon name="keyboard" size={19} />
                   </span>
-                  <span className="mobile-menu-item-copy">
-                    <strong>Skróty klawiszowe</strong>
-                    <small>Pomoc & hotkeye (?)</small>
-                  </span>
-                  <Icon name="chevron-down" size={16} className="mobile-menu-arrow" />
+                  <span className="mobile-menu-icon-btn-label">Keys</span>
                 </button>
               ) : null}
             </nav>
 
-            <section className="mobile-menu-section" aria-label="Audio">
-              <div className="mobile-menu-section-heading">
-                <span>Audio</span>
-                <output>{Math.round(volume * 100)}%</output>
-              </div>
-              <label className="mobile-menu-volume">
-                <Icon name="volume" size={18} />
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  aria-label="Volume"
-                  onChange={(event) => onVolume(Number(event.target.value))}
-                />
-              </label>
-            </section>
-
-            <section className="mobile-menu-section" aria-label="Window">
-              <button
-                type="button"
-                className={
-                  windowPinned
-                    ? "mobile-menu-item mobile-menu-pin is-active"
-                    : "mobile-menu-item mobile-menu-pin"
-                }
-                aria-pressed={windowPinned}
-                disabled={!windowPinAvailable}
-                onClick={() => void onSetWindowPinned(!windowPinned)}
-              >
-                <span className="mobile-menu-item-icon" aria-hidden="true">
-                  <Icon name="pin" size={19} />
-                </span>
-                <span className="mobile-menu-item-copy">
-                  <strong>
-                    {windowPinned ? "Unpin window" : "Pin top-right"}
-                  </strong>
-                  <small>
-                    {windowPinAvailable
-                      ? "Always on top"
-                      : "Desktop Tauri only"}
-                  </small>
-                </span>
-                <span className="mobile-menu-check" aria-hidden="true">
-                  {windowPinned ? <Icon name="check" size={16} /> : null}
-                </span>
-              </button>
+            <section className="mobile-menu-volume-row" aria-label="Volume">
+              <Icon name="volume" size={17} />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                aria-label="Volume"
+                onChange={(event) => onVolume(Number(event.target.value))}
+              />
+              <output>{Math.round(volume * 100)}%</output>
             </section>
 
             <MobileMenuAnalytics

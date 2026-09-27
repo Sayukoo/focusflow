@@ -61,6 +61,7 @@ export const FocusStatsBadge = memo(function FocusStatsBadge({
         aria-valuenow={goalPercent}
         aria-valuemin={0}
         aria-valuemax={100}
+        aria-valuetext={`${goalPercent}% dziennego celu`}
         aria-label="Dzienny cel skupienia"
       >
         <div

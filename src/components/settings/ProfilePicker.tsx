@@ -1,4 +1,4 @@
-import { memo, useState, type FormEvent } from "react";
+import { memo, useEffect, useRef, useState, type FormEvent } from "react";
 import type { MusicProfile } from "../../lib/profiles";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
@@ -40,6 +40,15 @@ export const ProfilePicker = memo(function ProfilePicker({
   const [name, setName] = useState("");
   const [draftAboutMe, setDraftAboutMe] = useState(userAboutMe ?? "");
   const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<number | null>(null);
+  useEffect(() => {
+    setDraftAboutMe(userAboutMe ?? "");
+  }, [userAboutMe]);
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    };
+  }, []);
   if (!open) return null;
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -52,7 +61,8 @@ export const ProfilePicker = memo(function ProfilePicker({
   const handleSaveAboutMe = () => {
     onUserAboutMeChange?.(draftAboutMe);
     setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2000);
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setJustSaved(false), 2000);
   };
 
   const isChanged = draftAboutMe !== (userAboutMe ?? "");

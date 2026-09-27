@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isTauriRuntime } from "../../lib/audio";
 import {
   GEMINI_KEY_CHANGED_EVENT,
@@ -7,7 +7,6 @@ import {
   saveStoredGeminiApiKey,
 } from "../../lib/gemini";
 import { Icon } from "../ui/Icon";
-import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 
 interface GeminiApiKeySectionProps {
   compact?: boolean;
@@ -15,6 +14,11 @@ interface GeminiApiKeySectionProps {
   onKeyChange?: (newKey: string) => void;
 }
 
+/**
+ * Ultra-minimalny klucz Gemini API — domyślnie zwinięty do jednej linijki
+ * piktogramów (✨ + kropka statusu). Work goal i mini-goals są najważniejsze,
+ * więc ta sekcja ma znikać w tle: bez opisów, bez stopki, same ikonki.
+ */
 export const GeminiApiKeySection = memo(function GeminiApiKeySection({
   compact = false,
   className = "",
@@ -24,13 +28,24 @@ export const GeminiApiKeySection = memo(function GeminiApiKeySection({
   const [isConfigured, setIsConfigured] = useState(() => hasGeminiConfiguration());
   const [showKey, setShowKey] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
-  const [justDeleted, setJustDeleted] = useState(false);
+  // Brak klucza → od razu rozwiń (trzeba wkleić). Klucz zapisany → minimalistycznie zwinięte.
+  const [expanded, setExpanded] = useState(() => !hasGeminiConfiguration());
+  const savedTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyChanged = () => {
       const stored = getStoredGeminiApiKey();
       setApiKeyDraft(stored);
-      setIsConfigured(hasGeminiConfiguration());
+      const configured = hasGeminiConfiguration();
+      setIsConfigured(configured);
+      // Zewnętrzna zmiana (np. inny panel) — dopasuj rozwinięcie tylko gdy klucza brakuje.
+      if (!configured) setExpanded(true);
     };
 
     window.addEventListener(GEMINI_KEY_CHANGED_EVENT, handleKeyChanged);
@@ -50,7 +65,10 @@ export const GeminiApiKeySection = memo(function GeminiApiKeySection({
     setIsConfigured(Boolean(trimmed));
     onKeyChange?.(trimmed);
     setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2000);
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setJustSaved(false), 2000);
+    // Po zapisie wróć do formy ikonki.
+    if (trimmed) setExpanded(false);
   };
 
   const handleDelete = () => {
@@ -58,14 +76,15 @@ export const GeminiApiKeySection = memo(function GeminiApiKeySection({
     setApiKeyDraft("");
     setIsConfigured(hasGeminiConfiguration());
     onKeyChange?.("");
-    setJustDeleted(true);
-    setTimeout(() => setJustDeleted(false), 2000);
+    setExpanded(true);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
       handleSave();
+    } else if (event.key === "Escape" && isConfigured) {
+      setExpanded(false);
     }
   };
 
@@ -74,105 +93,115 @@ export const GeminiApiKeySection = memo(function GeminiApiKeySection({
     if (isTauriRuntime()) {
       import("@tauri-apps/plugin-opener")
         .then(({ openUrl }) => openUrl(url))
-        .catch(() => window.open(url, "_blank"));
+        .catch(() => window.open(url, "_blank", "noopener,noreferrer"));
     } else {
-      window.open(url, "_blank");
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
   return (
     <div
-      className={`gemini-api-key-section ${compact ? "is-compact" : ""} ${className}`.trim()}
+      className={
+        `gemini-api-key-section is-minimal ${isConfigured ? "is-active" : "is-missing"} ${expanded ? "is-expanded" : "is-collapsed"} ${compact ? "is-compact" : ""} ${className}`.trim()
+      }
+      title="Klucz przechowywany tylko lokalnie, na tym urządzeniu"
     >
-      <div className="gemini-api-key-header">
-        <div className="gemini-api-key-title-wrap">
-          <span className="gemini-api-key-title">
-            <Icon name="sparkles" size={14} /> Klucz Gemini API
-          </span>
-          <span
-            className={`gemini-status-badge ${isConfigured ? "is-active" : "is-missing"}`}
-          >
-            <span className="gemini-status-dot" aria-hidden="true" />
-            {isConfigured ? "Aktywny" : "Brak klucza"}
-          </span>
-        </div>
+      <div className="gemini-mini-bar">
         <button
           type="button"
-          className="gemini-ai-studio-link"
-          onClick={handleOpenAiStudio}
-          aria-label="Pobierz bezpłatny klucz w Google AI Studio (otwiera stronę zewnętrzną)"
+          className="gemini-mini-toggle"
+          aria-expanded={expanded}
+          aria-label={expanded ? "Zwiń klucz Gemini API" : "Rozwiń klucz Gemini API"}
+          onClick={() => setExpanded((prev) => !prev)}
         >
-          Pobierz klucz w AI Studio
-          <Icon name="link" size={11} />
+          <span className="gemini-mini-icon" aria-hidden="true">
+            <Icon name="sparkles" size={13} />
+            <span className="gemini-mini-dot" />
+          </span>
+          <span className="gemini-mini-status">
+            {isConfigured ? "Aktywny" : "Brak klucza"}
+          </span>
+          <Icon
+            name="chevron-down"
+            size={12}
+            className={expanded ? "gemini-mini-chevron is-open" : "gemini-mini-chevron"}
+          />
         </button>
+
+        <span className="gemini-mini-spacer" aria-hidden="true" />
+
+        {!expanded && !isConfigured ? (
+          <button
+            type="button"
+            className="gemini-mini-icon-btn"
+            aria-label="Pobierz bezpłatny klucz w Google AI Studio (otwiera stronę zewnętrzną)"
+            title="Pobierz bezpłatny klucz w AI Studio"
+            onClick={handleOpenAiStudio}
+          >
+            <Icon name="link" size={12} />
+          </button>
+        ) : null}
       </div>
 
-      <p className="gemini-api-key-desc">
-        Wymagany do inteligentnego podziału celów (mini-goals) oraz kategoryzacji muzyki.
-      </p>
-
-      <div className="gemini-api-key-input-row">
-        <div className="gemini-api-key-input-wrap">
-          <input
-            type={showKey ? "text" : "password"}
-            className="gemini-api-key-input"
-            value={apiKeyDraft}
-            placeholder="Wklej klucz API (np. AIzaSy...)"
-            aria-label="Klucz API Gemini"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setApiKeyDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          <KaTeXTooltip formula={showKey ? "\\text{Ukryj klucz}" : "\\text{Pokaż klucz}"}>
+      {expanded ? (
+        <div className="gemini-mini-editor">
+          <div className="gemini-mini-input-wrap">
+            <input
+              type={showKey ? "text" : "password"}
+              className="gemini-api-key-input"
+              value={apiKeyDraft}
+              placeholder="Wklej klucz API (np. AIzaSy...)"
+              aria-label="Klucz API Gemini"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setApiKeyDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
             <button
               type="button"
               className="gemini-toggle-visibility-btn"
               aria-label={showKey ? "Ukryj klucz API" : "Pokaż klucz API"}
+              title={showKey ? "Ukryj" : "Pokaż"}
               onClick={() => setShowKey((prev) => !prev)}
             >
-              <Icon name={showKey ? "eye-off" : "eye"} size={14} />
+              <Icon name={showKey ? "eye-off" : "eye"} size={13} />
             </button>
-          </KaTeXTooltip>
-        </div>
+          </div>
 
-        <div className="gemini-api-key-actions">
+          <button
+            type="button"
+            className={`gemini-mini-icon-btn is-save ${justSaved ? "is-saved" : ""}`}
+            disabled={!isChanged && !justSaved}
+            onClick={handleSave}
+            aria-label="Zapisz klucz API"
+            title="Zapisz"
+          >
+            <Icon name="check" size={13} />
+          </button>
+
           {storedKey ? (
-            <KaTeXTooltip formula="\text{Usuń zapisany klucz}">
-              <button
-                type="button"
-                className="gemini-api-key-delete-btn"
-                aria-label="Usuń zapisany klucz API"
-                onClick={handleDelete}
-              >
-                {justDeleted ? "Usunięto" : <Icon name="trash" size={14} />}
-              </button>
-            </KaTeXTooltip>
+            <button
+              type="button"
+              className="gemini-mini-icon-btn is-delete"
+              aria-label="Usuń zapisany klucz API"
+              title="Usuń klucz"
+              onClick={handleDelete}
+            >
+              <Icon name="trash" size={13} />
+            </button>
           ) : null}
 
           <button
             type="button"
-            className={`gemini-api-key-save-btn ${justSaved ? "is-saved" : ""}`}
-            disabled={!isChanged && !justSaved}
-            onClick={handleSave}
-            aria-label="Zapisz klucz API"
+            className="gemini-mini-icon-btn"
+            onClick={handleOpenAiStudio}
+            aria-label="Pobierz bezpłatny klucz w Google AI Studio (otwiera stronę zewnętrzną)"
+            title="AI Studio — bezpłatny klucz"
           >
-            {justSaved ? (
-              <>
-                <Icon name="check" size={13} /> Zapisano
-              </>
-            ) : (
-              "Zapisz"
-            )}
+            <Icon name="link" size={12} />
           </button>
         </div>
-      </div>
-
-      <div className="gemini-api-key-footer">
-        <span className="gemini-api-key-privacy">
-          Prywatne na tym urządzeniu · zapisywane wyłącznie w pamięci lokalnej
-        </span>
-      </div>
+      ) : null}
     </div>
   );
 });

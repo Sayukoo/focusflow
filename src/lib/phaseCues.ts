@@ -209,6 +209,7 @@ export function speakPhaseCue(
       if (finished) return;
       finished = true;
       if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (activeVoiceResolve === finish) activeVoiceResolve = null;
       resolve(played);
     };
 
@@ -223,7 +224,11 @@ export function speakPhaseCue(
     utterance.onend = () => finish(true);
     utterance.onerror = () => finish(false);
 
-    timeoutTimer = setTimeout(() => finish(true), 2000);
+    // Safety net: speechSynthesis can hang without events; resolve false
+    // (not played) so callers don't mistake a stall for success.
+    // stopActiveVoice() clears this via finish(false) through activeVoiceResolve.
+    timeoutTimer = setTimeout(() => finish(false), 15_000);
+    activeVoiceResolve = finish;
 
     try {
       window.speechSynthesis.speak(utterance);
@@ -269,7 +274,7 @@ export async function playVoicePackCue(
     activeVoiceAudio = audio;
     activeVoiceResolve = finish;
     audio.preload = "auto";
-    audio.volume = Math.min(1, Math.max(0.7, volume * 1.5));
+    audio.volume = Math.min(1, Math.max(0, volume));
     audio.addEventListener(
       "ended",
       () => finish(true),

@@ -275,7 +275,6 @@ fn update_discord_presence(
         let mut assets_builder = activity::Assets::new();
         let large_key = payload.large_image_key.as_deref().unwrap_or("app_icon");
         assets_builder = assets_builder.large_image(large_key);
-        let has_assets = true;
 
         if let Some(ref large_txt) = payload.large_image_text {
             assets_builder = assets_builder.large_text(large_txt);
@@ -288,9 +287,7 @@ fn update_discord_presence(
             assets_builder = assets_builder.small_text(small_txt);
         }
 
-        if has_assets {
-            activity_builder = activity_builder.assets(assets_builder);
-        }
+        activity_builder = activity_builder.assets(assets_builder);
 
         if client.set_activity(activity_builder).is_err() {
             *guard = None;
@@ -393,6 +390,13 @@ fn fetch_url_content(url: String) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
 
+    // SSRF/file-read guard: only http(s) URLs, curl restricted to http/https,
+    // 2 MB response cap so a huge page can't OOM the app.
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("Only http(s) URLs are allowed".into());
+    }
+
     let mut cmd = Command::new("curl");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x0800_0000);
@@ -400,8 +404,12 @@ fn fetch_url_content(url: String) -> Result<String, String> {
     let output = cmd
         .arg("-s")
         .arg("-L")
+        .arg("--proto")
+        .arg("=http,=https")
         .arg("--max-time")
         .arg("12")
+        .arg("--max-filesize")
+        .arg("2097152")
         .arg("-A")
         .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .arg("-H")
@@ -429,7 +437,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init());
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch passes its args here and exits — bring the
+            // already-running window to the front instead of opening a clone.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
 
     #[cfg(desktop)]
     let builder = builder.plugin(

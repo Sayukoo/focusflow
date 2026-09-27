@@ -9,11 +9,13 @@ interface PlaybackControlsProps {
   duration: number;
   mode?: FocusMode;
   playbackRate?: number;
+  shuffleEnabled?: boolean;
   onTogglePlay: () => void | Promise<void>;
   onNext: () => void | Promise<void>;
   onPrevious: () => void | Promise<void>;
   onSeek: (seconds: number) => void;
   onPlaybackRateChange?: (rate: number) => void;
+  onToggleShuffle?: () => void;
 }
 
 // PERF: memo — re-renders only when playback state/progress actually changes,
@@ -24,11 +26,13 @@ export const PlaybackControls = memo(function PlaybackControls({
   duration,
   mode,
   playbackRate = 1.0,
+  shuffleEnabled = false,
   onTogglePlay,
   onNext,
   onPrevious,
   onSeek,
   onPlaybackRateChange,
+  onToggleShuffle,
 }: PlaybackControlsProps): ReactElement {
   const [speedPopoverOpen, setSpeedPopoverOpen] = useState(false);
   const speedRef = useRef<HTMLDivElement>(null);
@@ -55,6 +59,32 @@ export const PlaybackControls = memo(function PlaybackControls({
     <div className="transport">
       <div className="transport-strip" role="group" aria-label="Playback controls">
         <div className="transport-row">
+          {onToggleShuffle ? (
+            <KaTeXTooltip
+              formula={
+                shuffleEnabled
+                  ? "\\text{Losowo: włączone}"
+                  : "\\text{Losowo: wyłączone}"
+              }
+            >
+              <button
+                type="button"
+                className={
+                  shuffleEnabled
+                    ? "transport-btn shuffle-btn is-active"
+                    : "transport-btn shuffle-btn"
+                }
+                aria-label={
+                  shuffleEnabled ? "Disable shuffle" : "Enable shuffle"
+                }
+                aria-pressed={shuffleEnabled}
+                title={shuffleEnabled ? "Losowo: włączone" : "Losowo: wyłączone"}
+                onClick={onToggleShuffle}
+              >
+                <Icon name="shuffle" size={18} />
+              </button>
+            </KaTeXTooltip>
+          ) : null}
           <KaTeXTooltip formula="\text{Previous}">
             <button
               type="button"

@@ -6,6 +6,7 @@ import type { PlaybackQueue, Track } from "../../types";
 import { Icon } from "../ui/Icon";
 import { KaTeXTooltip } from "../ui/KaTeXTooltip";
 import { MusicLibrary } from "../library/MusicLibrary";
+import { ProfilePicker } from "../settings/ProfilePicker";
 import { WeeklyFocusChart } from "./WeeklyFocusChart";
 
 interface HubPanelProps {
@@ -72,6 +73,8 @@ export const HubPanel = memo(function HubPanel({
   activeProfileId,
   userAboutMe,
   onSelectProfile,
+  onCreateProfile,
+  onDeleteProfile,
   onUserAboutMeChange,
 }: HubPanelProps): ReactElement | null {
   const [isChillDropTarget, setIsChillDropTarget] = useState(false);
@@ -84,8 +87,10 @@ export const HubPanel = memo(function HubPanel({
   const activeProfile = profiles.find(
     (profile) => profile.id === activeProfileId,
   );
+  const isCustomProfile = activeProfile?.kind === "custom";
   const isEnergizing =
-    activeProfile?.theme === "energizing" || activeProfileId === "energizing";
+    !isCustomProfile &&
+    (activeProfile?.theme === "energizing" || activeProfileId === "energizing");
 
   const handleSelectFocus = () => {
     const target =
@@ -188,7 +193,12 @@ export const HubPanel = memo(function HubPanel({
             <div className="hub-brand-copy">
               <strong className="hub-title">Centrum</strong>
               <span className="hub-subtitle">
-                FocusFlow · {isEnergizing ? "Energetyczne" : "Chillowe"}
+                FocusFlow ·{" "}
+                {isCustomProfile
+                  ? (activeProfile?.name ?? "Profil")
+                  : isEnergizing
+                    ? "Energetyczne"
+                    : "Chillowe"}
               </span>
             </div>
           </div>
@@ -202,9 +212,9 @@ export const HubPanel = memo(function HubPanel({
               <KaTeXTooltip formula="\text{Kategoria: Chillowe (Lo-Fi, Ambient, Spokojna)}">
                 <button
                   type="button"
-                  className={`hub-mode-btn hub-mode-btn--focus ${!isEnergizing ? "is-active" : ""} ${isChillDropTarget ? "is-drop-target" : ""}`}
+                  className={`hub-mode-btn hub-mode-btn--focus ${!isEnergizing && !isCustomProfile ? "is-active" : ""} ${isChillDropTarget ? "is-drop-target" : ""}`}
                   role="radio"
-                  aria-checked={!isEnergizing}
+                  aria-checked={!isEnergizing && !isCustomProfile}
                   aria-label="Kategoria Chillowe"
                   onClick={handleSelectFocus}
                   onDragOver={handleChillDragOver}
@@ -260,9 +270,33 @@ export const HubPanel = memo(function HubPanel({
           </div>
         </header>
 
-        {/* One continuous scrollable body: the music library first, account
-            & profiles right below — no tab switching, nothing gets squeezed. */}
+        {/* One continuous scrollable body: profiles first (each student gets
+            their own isolated library), then the active profile's music —
+            no tab switching, nothing gets squeezed. */}
         <div className="hub-body">
+          <section className="hub-section hub-profiles-section" aria-label="Profile">
+            <div className="hub-profiles-header">
+              <span className="hub-profiles-title">Profile</span>
+              <span className="hub-profiles-hint">
+                Każdy profil ma tylko swoją muzykę — wybierz profil ucznia,
+                a potem dodaj utwory powyżej.
+              </span>
+            </div>
+            <ProfilePicker
+              open
+              embedded
+              profiles={profiles}
+              activeProfileId={activeProfileId}
+              onSelect={onSelectProfile}
+              onCreate={onCreateProfile ?? (() => {})}
+              onDelete={onDeleteProfile ?? (() => {})}
+            />
+          </section>
+
+          <div className="hub-section-heading" aria-hidden="true">
+            Muzyka profilu
+          </div>
+
           <section className="hub-section" aria-label="Muzyka">
             <MusicLibrary
               tracks={tracks}
